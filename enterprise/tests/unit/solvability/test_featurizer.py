@@ -1,3 +1,7 @@
+import concurrent.futures
+import threading
+from unittest.mock import MagicMock
+
 import pytest
 from integrations.solvability.models.featurizer import Feature, FeatureEmbedding
 
@@ -131,8 +135,21 @@ def test_featurizer_embed_batch(samples, batch_size, featurizer, mock_llm_config
 
 def test_featurizer_embed_batch_thread_safety(featurizer, mock_llm_config, monkeypatch):
     """Test embed_batch maintains correct ordering and handles concurrent execution safely."""
-    import time
-    from unittest.mock import MagicMock
+    batch_size = 20
+
+    # Barrier ensures all threads are in-flight simultaneously before any returns,
+    # guaranteeing genuine concurrent execution without real delays.
+    barrier = threading.Barrier(batch_size)
+
+    # Force the executor to use exactly batch_size workers so all tasks can reach
+    # the barrier simultaneously — the default max_workers on low-CPU CI machines
+    # can be fewer than batch_size, which would cause a permanent deadlock.
+    monkeypatch.setattr(
+        'integrations.solvability.models.featurizer.ThreadPoolExecutor',
+        lambda *args, **kwargs: concurrent.futures.ThreadPoolExecutor(
+            max_workers=batch_size
+        ),
+    )
 
     # Create unique responses for each issue to verify ordering
     def create_mock_response(issue_index):
@@ -149,24 +166,25 @@ def test_featurizer_embed_batch_thread_safety(featurizer, mock_llm_config, monke
         mock_response.usage.completion_tokens = 5 + issue_index
         return mock_response
 
-    # Track call order and add delays to simulate varying processing times
-    call_count = 0
+    # Track call order to verify all issues were processed
     call_order = []
 
     def mock_completion(*args, **kwargs):
-        nonlocal call_count
         # Extract issue index from the message content
         messages = kwargs.get('messages', args[0] if args else [])
         message_content = messages[1]['content']
         issue_index = int(message_content.split('Issue ')[-1])
         call_order.append(issue_index)
 
-        # Add varying delays to simulate real-world conditions
-        # Later issues process faster to test race conditions
-        delay = 0.01 * (20 - issue_index)
-        time.sleep(delay)
+        # Hold until all threads are running, then release simultaneously.
+        # This creates genuine concurrent execution without wall-clock delays.
+        try:
+            barrier.wait(timeout=5)
+        except threading.BrokenBarrierError:
+            pytest.fail(
+                'Not all worker threads reached the barrier; concurrent fan-out assumption failed.'
+            )
 
-        call_count += 1
         return create_mock_response(issue_index)
 
     def mock_llm_class(*args, **kwargs):
@@ -178,8 +196,6 @@ def test_featurizer_embed_batch_thread_safety(featurizer, mock_llm_config, monke
         'integrations.solvability.models.featurizer.LLM', mock_llm_class
     )
 
-    # Test with a large enough batch to stress concurrency
-    batch_size = 20
     issues = [f'Issue {i}' for i in range(batch_size)]
 
     embeddings = featurizer.embed_batch(issues, llm_config=mock_llm_config, samples=1)
@@ -187,7 +203,9 @@ def test_featurizer_embed_batch_thread_safety(featurizer, mock_llm_config, monke
     # Verify we got all embeddings
     assert len(embeddings) == batch_size
 
-    # Verify each embedding corresponds to its correct issue index
+    # Verify each embedding corresponds to its correct issue index.
+    # This is the key ordering assertion: results must match input order
+    # even though threads completed concurrently.
     for i, embedding in enumerate(embeddings):
         assert len(embedding.samples) == 1
         sample = embedding.samples[0]
@@ -202,7 +220,7 @@ def test_featurizer_embed_batch_thread_safety(featurizer, mock_llm_config, monke
         assert embedding.completion_tokens == 5 + i
 
     # Verify all issues were processed
-    assert call_count == batch_size
+    assert len(call_order) == batch_size
     assert len(set(call_order)) == batch_size  # All unique indices
 
 
@@ -210,7 +228,6 @@ def test_featurizer_embed_batch_exception_handling(
     featurizer, mock_llm_config, monkeypatch
 ):
     """Test embed_batch handles exceptions in individual tasks correctly."""
-    from unittest.mock import MagicMock
 
     def mock_completion(*args, **kwargs):
         # Extract issue index from the message content
