@@ -2,7 +2,15 @@ import asyncio
 import hashlib
 import json
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
+from fastapi import (
+    APIRouter,
+    BackgroundTasks,
+    Depends,
+    Header,
+    HTTPException,
+    Request,
+    status,
+)
 from fastapi.responses import JSONResponse
 from integrations.gitlab.gitlab_manager import GitlabManager
 from integrations.gitlab.gitlab_service import SaaSGitLabService
@@ -15,12 +23,15 @@ from integrations.models import Message, SourceType
 from integrations.types import GitLabResourceType
 from integrations.utils import GITLAB_WEBHOOK_URL, IS_LOCAL_DEPLOYMENT
 from pydantic import BaseModel
+from server.auth.constants import AUTOMATION_EVENT_FORWARDING_ENABLED
 from server.auth.token_manager import TokenManager
+from server.services.automation_event_service import AutomationEventService
 from storage.gitlab_webhook import GitlabWebhook
 from storage.gitlab_webhook_store import GitlabWebhookStore
 
 from openhands.core.logger import openhands_logger as logger
 from openhands.integrations.gitlab.gitlab_service import GitLabServiceImpl
+from openhands.integrations.provider import ProviderType
 from openhands.server.shared import sio
 from openhands.server.user_auth import get_user_id
 
@@ -29,6 +40,7 @@ webhook_store = GitlabWebhookStore()
 
 token_manager = TokenManager()
 gitlab_manager = GitlabManager(token_manager)
+automation_event_service = AutomationEventService(token_manager)
 
 
 # Request/Response models
@@ -82,6 +94,7 @@ async def verify_gitlab_signature(
 @gitlab_integration_router.post('/gitlab/events')
 async def gitlab_events(
     request: Request,
+    background_tasks: BackgroundTasks,
     x_gitlab_token: str = Header(None),
     x_openhands_webhook_id: str = Header(None),
     x_openhands_user_id: str = Header(None),
@@ -112,6 +125,16 @@ async def gitlab_events(
                 content={'message': 'Duplicate GitLab event ignored.'},
             )
 
+        # Forward to automation service (fire-and-forget background task)
+        if AUTOMATION_EVENT_FORWARDING_ENABLED:
+            background_tasks.add_task(
+                automation_event_service.forward_event,
+                provider=ProviderType.GITLAB,
+                payload=payload_data,
+                installation_id=x_openhands_webhook_id,
+            )
+
+        # Existing resolver bot processing
         message = Message(
             source=SourceType.GITLAB,
             message={

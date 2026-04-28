@@ -163,7 +163,8 @@ class AutomationEventService:
         org_id = await self._resolve_git_org(provider, git_org_name)
 
         # Fallback for personal repos (owner_type indicates individual user)
-        if not org_id and owner_type == 'User':
+        # GitHub uses 'User', GitLab uses 'user'
+        if not org_id and owner_type and owner_type.lower() == 'user':
             org_id = await self._resolve_personal_org(provider, owner_id)
             if org_id:
                 logger.info(
@@ -205,6 +206,18 @@ class AutomationEventService:
             repo = payload.get('repository', {})
             owner = repo.get('owner', {})
             return owner.get('login'), owner.get('type'), owner.get('id')
+
+        if provider == ProviderType.GITLAB:
+            # GitLab uses 'project' instead of 'repository'
+            # path_with_namespace is like "org-name/repo-name" or "user-name/repo-name"
+            project = payload.get('project', {})
+            path_with_namespace = project.get('path_with_namespace', '')
+            git_org = path_with_namespace.split('/')[0] if path_with_namespace else None
+            namespace = project.get('namespace', {})
+            # GitLab uses 'group' for organizations and 'user' for personal projects
+            owner_type = namespace.get('kind')
+            owner_id = namespace.get('id')
+            return git_org, owner_type, owner_id
 
         logger.warning(f'Unsupported provider ({provider.value})')
         return None, None, None

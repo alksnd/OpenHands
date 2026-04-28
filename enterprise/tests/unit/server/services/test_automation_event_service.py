@@ -826,3 +826,249 @@ class TestCacheHelpers:
             service = create_service(mock_token_manager)
             # Should not raise
             await service._set_cached_value('test-key', 'test-value', 3600)
+
+
+# =============================================================================
+# GitLab-specific tests
+# =============================================================================
+
+
+@pytest.fixture
+def gitlab_group_payload():
+    """Create a sample GitLab webhook payload for a group-owned project."""
+    return {
+        'object_kind': 'issue',
+        'event_type': 'issue',
+        'project': {
+            'id': 123456,
+            'path_with_namespace': 'test-org/test-repo',
+            'visibility': 'public',
+            'namespace': {
+                'id': 789,
+                'kind': 'group',
+                'name': 'test-org',
+            },
+        },
+        'user': {
+            'id': 12345,
+            'username': 'testuser',
+        },
+        'object_attributes': {
+            'id': 1,
+            'iid': 1,
+            'title': 'Test Issue',
+        },
+    }
+
+
+@pytest.fixture
+def gitlab_user_payload():
+    """Create a sample GitLab webhook payload for a user-owned project."""
+    return {
+        'object_kind': 'issue',
+        'event_type': 'issue',
+        'project': {
+            'id': 654321,
+            'path_with_namespace': 'testuser/personal-repo',
+            'visibility': 'private',
+            'namespace': {
+                'id': 12345,
+                'kind': 'user',
+                'name': 'testuser',
+            },
+        },
+        'user': {
+            'id': 12345,
+            'username': 'testuser',
+        },
+        'object_attributes': {
+            'id': 2,
+            'iid': 1,
+            'title': 'Personal Issue',
+        },
+    }
+
+
+class TestExtractOwnerInfoGitLab:
+    """Tests for _extract_owner_info method with GitLab payloads."""
+
+    def test_extract_gitlab_group_owner(self, mock_token_manager, gitlab_group_payload):
+        """
+        GIVEN: GitLab payload for a group-owned project
+        WHEN: _extract_owner_info is called
+        THEN: Returns correct git_org, owner_type, owner_id
+        """
+        with patch('server.services.automation_event_service.sio'):
+            service = create_service(mock_token_manager)
+            git_org, owner_type, owner_id = service._extract_owner_info(
+                ProviderType.GITLAB, gitlab_group_payload
+            )
+
+            assert git_org == 'test-org'
+            assert owner_type == 'group'
+            assert owner_id == 789
+
+    def test_extract_gitlab_user_owner(self, mock_token_manager, gitlab_user_payload):
+        """
+        GIVEN: GitLab payload for a user-owned project
+        WHEN: _extract_owner_info is called
+        THEN: Returns correct git_org, owner_type, owner_id
+        """
+        with patch('server.services.automation_event_service.sio'):
+            service = create_service(mock_token_manager)
+            git_org, owner_type, owner_id = service._extract_owner_info(
+                ProviderType.GITLAB, gitlab_user_payload
+            )
+
+            assert git_org == 'testuser'
+            assert owner_type == 'user'
+            assert owner_id == 12345
+
+    def test_extract_gitlab_missing_project(self, mock_token_manager):
+        """
+        GIVEN: GitLab payload without project data
+        WHEN: _extract_owner_info is called
+        THEN: Returns None values
+        """
+        payload = {'object_kind': 'issue'}
+
+        with patch('server.services.automation_event_service.sio'):
+            service = create_service(mock_token_manager)
+            git_org, owner_type, owner_id = service._extract_owner_info(
+                ProviderType.GITLAB, payload
+            )
+
+            assert git_org is None
+            assert owner_type is None
+            assert owner_id is None
+
+
+class TestResolveOrgContextGitLab:
+    """Tests for _resolve_org_context method with GitLab payloads."""
+
+    @pytest.mark.asyncio
+    async def test_resolve_gitlab_group_org(
+        self, mock_token_manager, mock_org_git_claim, gitlab_group_payload
+    ):
+        """
+        GIVEN: GitLab payload for a group project with claimed org
+        WHEN: _resolve_org_context is called
+        THEN: Returns correct OrgContext with org_id
+        """
+        mock_redis = AsyncMock()
+        mock_redis.get = AsyncMock(return_value=None)  # Cache miss
+        mock_redis.setex = AsyncMock()
+
+        with patch(
+            'server.services.automation_event_service.resolve_org_for_repo',
+            new_callable=AsyncMock,
+            return_value=mock_org_git_claim.org_id,
+        ), patch('server.services.automation_event_service.sio') as mock_sio:
+            mock_sio.manager.redis = mock_redis
+
+            service = create_service(mock_token_manager)
+            result = await service._resolve_org_context(
+                ProviderType.GITLAB, gitlab_group_payload
+            )
+
+            assert result is not None
+            assert result.org_id == mock_org_git_claim.org_id
+            assert result.git_org == 'test-org'
+
+    @pytest.mark.asyncio
+    async def test_resolve_gitlab_user_personal_org_fallback(
+        self, mock_token_manager, mock_org_git_claim, gitlab_user_payload
+    ):
+        """
+        GIVEN: GitLab payload for a user project (not claimed via OrgGitClaim)
+        WHEN: _resolve_org_context is called
+        THEN: Falls back to personal org resolution
+        """
+        mock_redis = AsyncMock()
+        mock_redis.get = AsyncMock(return_value=None)  # Cache miss
+        mock_redis.setex = AsyncMock()
+
+        with patch(
+            'server.services.automation_event_service.resolve_org_for_repo',
+            new_callable=AsyncMock,
+            return_value=None,  # No OrgGitClaim for user
+        ), patch('server.services.automation_event_service.sio') as mock_sio:
+            mock_sio.manager.redis = mock_redis
+
+            service = create_service(mock_token_manager)
+            # Mock _resolve_personal_org to return a personal org
+            service._resolve_personal_org = AsyncMock(
+                return_value=mock_org_git_claim.org_id
+            )
+
+            result = await service._resolve_org_context(
+                ProviderType.GITLAB, gitlab_user_payload
+            )
+
+            assert result is not None
+            assert result.org_id == mock_org_git_claim.org_id
+            assert result.git_org == 'testuser'
+            # Verify personal org fallback was called with GitLab user ID
+            service._resolve_personal_org.assert_called_once_with(
+                ProviderType.GITLAB, 12345
+            )
+
+    @pytest.mark.asyncio
+    async def test_resolve_gitlab_no_org_found(
+        self, mock_token_manager, gitlab_group_payload
+    ):
+        """
+        GIVEN: GitLab payload for a project with no org claim and no personal org
+        WHEN: _resolve_org_context is called
+        THEN: Returns None
+        """
+        mock_redis = AsyncMock()
+        mock_redis.get = AsyncMock(return_value=None)
+        mock_redis.setex = AsyncMock()
+
+        with patch(
+            'server.services.automation_event_service.resolve_org_for_repo',
+            new_callable=AsyncMock,
+            return_value=None,
+        ), patch('server.services.automation_event_service.sio') as mock_sio:
+            mock_sio.manager.redis = mock_redis
+
+            service = create_service(mock_token_manager)
+            result = await service._resolve_org_context(
+                ProviderType.GITLAB, gitlab_group_payload
+            )
+
+            # Group owner doesn't fall back to personal org
+            assert result is None
+
+
+class TestResolveGitOrgGitLab:
+    """Tests for _resolve_git_org method with GitLab provider."""
+
+    @pytest.mark.asyncio
+    async def test_resolve_gitlab_org_includes_provider_in_cache_key(
+        self, mock_token_manager, mock_org_git_claim
+    ):
+        """
+        GIVEN: GitLab provider with an org name
+        WHEN: _resolve_git_org is called
+        THEN: Cache key includes the gitlab provider name
+        """
+        mock_redis = AsyncMock()
+        mock_redis.get = AsyncMock(return_value=None)
+        mock_redis.setex = AsyncMock()
+
+        with patch(
+            'server.services.automation_event_service.resolve_org_for_repo',
+            new_callable=AsyncMock,
+            return_value=mock_org_git_claim.org_id,
+        ), patch('server.services.automation_event_service.sio') as mock_sio:
+            mock_sio.manager.redis = mock_redis
+
+            service = create_service(mock_token_manager)
+            await service._resolve_git_org(ProviderType.GITLAB, 'Test-Org')
+
+            # Verify cache key includes provider and normalized org name
+            get_call_args = mock_redis.get.call_args[0][0]
+            assert 'gitlab' in get_call_args
+            assert 'test-org' in get_call_args  # Lowercase normalized

@@ -8,8 +8,15 @@ import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from fastapi import BackgroundTasks
 from fastapi.responses import JSONResponse
 from server.routes.integration.gitlab import gitlab_events
+
+
+@pytest.fixture
+def mock_background_tasks():
+    """Create a mock BackgroundTasks."""
+    return MagicMock(spec=BackgroundTasks)
 
 
 @pytest.mark.asyncio
@@ -17,7 +24,7 @@ from server.routes.integration.gitlab import gitlab_events
 @patch('server.routes.integration.gitlab.gitlab_manager')
 @patch('server.routes.integration.gitlab.sio')
 async def test_gitlab_events_deduplication_with_object_id(
-    mock_sio, mock_gitlab_manager, mock_verify_signature
+    mock_sio, mock_gitlab_manager, mock_verify_signature, mock_background_tasks
 ):
     """Test that duplicate GitLab events are deduplicated using object_attributes.id."""
     # Setup mocks
@@ -47,6 +54,7 @@ async def test_gitlab_events_deduplication_with_object_id(
     # Call the endpoint
     response = await gitlab_events(
         request=mock_request,
+        background_tasks=mock_background_tasks,
         x_gitlab_token='test_token',
         x_openhands_webhook_id='test_webhook_id',
         x_openhands_user_id='test_user_id',
@@ -70,6 +78,7 @@ async def test_gitlab_events_deduplication_with_object_id(
     # Call the endpoint again with the same payload
     response = await gitlab_events(
         request=mock_request,
+        background_tasks=mock_background_tasks,
         x_gitlab_token='test_token',
         x_openhands_webhook_id='test_webhook_id',
         x_openhands_user_id='test_user_id',
@@ -92,7 +101,7 @@ async def test_gitlab_events_deduplication_with_object_id(
 @patch('server.routes.integration.gitlab.gitlab_manager')
 @patch('server.routes.integration.gitlab.sio')
 async def test_gitlab_events_deduplication_without_object_id(
-    mock_sio, mock_gitlab_manager, mock_verify_signature
+    mock_sio, mock_gitlab_manager, mock_verify_signature, mock_background_tasks
 ):
     """Test that GitLab events without object_attributes.id are deduplicated using hash of payload."""
     # Setup mocks
@@ -127,6 +136,7 @@ async def test_gitlab_events_deduplication_without_object_id(
     # Call the endpoint
     response = await gitlab_events(
         request=mock_request,
+        background_tasks=mock_background_tasks,
         x_gitlab_token='test_token',
         x_openhands_webhook_id='test_webhook_id',
         x_openhands_user_id='test_user_id',
@@ -150,6 +160,7 @@ async def test_gitlab_events_deduplication_without_object_id(
     # Call the endpoint again with the same payload
     response = await gitlab_events(
         request=mock_request,
+        background_tasks=mock_background_tasks,
         x_gitlab_token='test_token',
         x_openhands_webhook_id='test_webhook_id',
         x_openhands_user_id='test_user_id',
@@ -172,7 +183,7 @@ async def test_gitlab_events_deduplication_without_object_id(
 @patch('server.routes.integration.gitlab.gitlab_manager')
 @patch('server.routes.integration.gitlab.sio')
 async def test_gitlab_events_different_payloads_not_deduplicated(
-    mock_sio, mock_gitlab_manager, mock_verify_signature
+    mock_sio, mock_gitlab_manager, mock_verify_signature, mock_background_tasks
 ):
     """Test that different GitLab events are not deduplicated."""
     # Setup mocks
@@ -196,6 +207,7 @@ async def test_gitlab_events_different_payloads_not_deduplicated(
     # Call the endpoint with first payload
     response1 = await gitlab_events(
         request=mock_request1,
+        background_tasks=mock_background_tasks,
         x_gitlab_token='test_token',
         x_openhands_webhook_id='test_webhook_id',
         x_openhands_user_id='test_user_id',
@@ -223,6 +235,7 @@ async def test_gitlab_events_different_payloads_not_deduplicated(
     # Call the endpoint with second payload
     response2 = await gitlab_events(
         request=mock_request2,
+        background_tasks=mock_background_tasks,
         x_gitlab_token='test_token',
         x_openhands_webhook_id='test_webhook_id',
         x_openhands_user_id='test_user_id',
@@ -242,7 +255,7 @@ async def test_gitlab_events_different_payloads_not_deduplicated(
 @patch('server.routes.integration.gitlab.gitlab_manager')
 @patch('server.routes.integration.gitlab.sio')
 async def test_gitlab_events_multiple_identical_payloads_deduplicated(
-    mock_sio, mock_gitlab_manager, mock_verify_signature
+    mock_sio, mock_gitlab_manager, mock_verify_signature, mock_background_tasks
 ):
     """Test that multiple identical GitLab events are properly deduplicated."""
     # Setup mocks
@@ -273,6 +286,7 @@ async def test_gitlab_events_multiple_identical_payloads_deduplicated(
     # Call the endpoint first time
     response1 = await gitlab_events(
         request=mock_request,
+        background_tasks=mock_background_tasks,
         x_gitlab_token='test_token',
         x_openhands_webhook_id='test_webhook_id',
         x_openhands_user_id='test_user_id',
@@ -298,6 +312,7 @@ async def test_gitlab_events_multiple_identical_payloads_deduplicated(
     # Call the endpoint second time with the same payload
     response2 = await gitlab_events(
         request=mock_request,
+        background_tasks=mock_background_tasks,
         x_gitlab_token='test_token',
         x_openhands_webhook_id='test_webhook_id',
         x_openhands_user_id='test_user_id',
@@ -321,6 +336,7 @@ async def test_gitlab_events_multiple_identical_payloads_deduplicated(
     # Call the endpoint third time with the same payload
     response3 = await gitlab_events(
         request=mock_request,
+        background_tasks=mock_background_tasks,
         x_gitlab_token='test_token',
         x_openhands_webhook_id='test_webhook_id',
         x_openhands_user_id='test_user_id',
