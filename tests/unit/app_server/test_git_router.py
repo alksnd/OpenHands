@@ -12,6 +12,7 @@ from fastapi.testclient import TestClient
 
 from openhands.app_server.git.git_models import SortOrder
 from openhands.app_server.git.git_router import (
+    check_repository_onboarding_files,
     router,
     search_branches,
     search_repositories,
@@ -36,28 +37,28 @@ class TestPagination:
 
     def test_returns_first_page_when_no_page_id(self):
         """Test that first page is returned when no page_id is provided."""
-        items = ['a', 'b', 'c', 'd', 'e']
+        items = ["a", "b", "c", "d", "e"]
 
         result, next_page_id = paginate_results(items, None, 2)
 
-        assert result == ['a', 'b']
+        assert result == ["a", "b"]
         # next_page_id is base64-encoded
         assert next_page_id == encode_page_id(2)
 
     def test_returns_second_page_when_page_id_provided(self):
         """Test that correct page is returned when page_id is provided."""
-        items = ['a', 'b', 'c', 'd', 'e']
+        items = ["a", "b", "c", "d", "e"]
         # Use base64-encoded page_id
         encoded_page_id = encode_page_id(2)
 
         result, next_page_id = paginate_results(items, encoded_page_id, 2)
 
-        assert result == ['c', 'd']
+        assert result == ["c", "d"]
         assert next_page_id == encode_page_id(4)
 
     def test_returns_empty_when_page_id_exceeds_length(self):
         """Test that empty list is returned when page_id exceeds length."""
-        items = ['a', 'b', 'c']
+        items = ["a", "b", "c"]
         # Use base64-encoded page_id
         encoded_page_id = encode_page_id(10)
 
@@ -68,18 +69,18 @@ class TestPagination:
 
     def test_returns_none_next_page_when_last_page(self):
         """Test that next_page_id is None on last page."""
-        items = ['a', 'b', 'c']
+        items = ["a", "b", "c"]
         # Use base64-encoded page_id
         encoded_page_id = encode_page_id(2)
 
         result, next_page_id = paginate_results(items, encoded_page_id, 2)
 
-        assert result == ['c']
+        assert result == ["c"]
         assert next_page_id is None
 
     def test_respects_limit(self):
         """Test that limit is respected."""
-        items = ['a', 'b', 'c', 'd', 'e']
+        items = ["a", "b", "c", "d", "e"]
 
         result, next_page_id = paginate_results(items, None, 5)
 
@@ -89,7 +90,7 @@ class TestPagination:
 
 def _make_mock_user_context(
     provider_tokens: dict | None = None,
-    user_id: str = 'test-user-id',
+    user_id: str = "test-user-id",
 ):
     """Create a mock UserContext for testing."""
     context = MagicMock(spec=UserContext)
@@ -102,9 +103,9 @@ def _make_mock_provider_handler():
     """Create a mock ProviderHandler."""
     handler = MagicMock()
     handler.get_github_installations = AsyncMock(
-        return_value=['inst-1', 'inst-2', 'inst-3', 'inst-4', 'inst-5']
+        return_value=["inst-1", "inst-2", "inst-3", "inst-4", "inst-5"]
     )
-    handler.get_bitbucket_workspaces = AsyncMock(return_value=['ws-1', 'ws-2'])
+    handler.get_bitbucket_workspaces = AsyncMock(return_value=["ws-1", "ws-2"])
     handler.get_repositories = AsyncMock(return_value=[])
     return handler
 
@@ -135,22 +136,22 @@ class TestInstallationsEndpoint:
     def test_returns_403_when_no_provider_tokens(self, test_client):
         """Test that 403 is returned when no provider tokens."""
         with patch(
-            'openhands.app_server.user.auth_user_context.AuthUserContext.get_provider_tokens',
+            "openhands.app_server.user.auth_user_context.AuthUserContext.get_provider_tokens",
             AsyncMock(return_value=None),
         ):
             response = test_client.get(
-                '/git/installations/search', params={'provider': 'github'}
+                "/git/installations/search", params={"provider": "github"}
             )
             assert response.status_code == status.HTTP_403_FORBIDDEN
 
     def test_returns_422_for_unsupported_provider(self, test_client):
         """Test that 422 is returned for unsupported provider."""
         with patch(
-            'openhands.app_server.user.auth_user_context.AuthUserContext.get_provider_tokens',
-            AsyncMock(return_value={'github': 'token'}),
+            "openhands.app_server.user.auth_user_context.AuthUserContext.get_provider_tokens",
+            AsyncMock(return_value={"github": "token"}),
         ):
             response = test_client.get(
-                '/git/installations/search', params={'provider': 'invalid'}
+                "/git/installations/search", params={"provider": "invalid"}
             )
             assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
 
@@ -160,7 +161,7 @@ class TestSearchUserInstallations:
     """Test suite for search_user_installations function."""
 
     @pytest.mark.asyncio
-    @patch('openhands.app_server.git.git_router.ProviderHandler')
+    @patch("openhands.app_server.git.git_router.ProviderHandler")
     async def test_returns_paginated_installations(self, mock_handler_cls):
         """Test that installations are returned with pagination."""
         # Arrange
@@ -169,9 +170,9 @@ class TestSearchUserInstallations:
 
         mock_context = _make_mock_user_context(
             provider_tokens={
-                ProviderType.GITHUB: ProviderToken(user_id='user-123', token='token')
+                ProviderType.GITHUB: ProviderToken(user_id="user-123", token="token")
             },
-            user_id='user-123',
+            user_id="user-123",
         )
 
         # Act
@@ -183,12 +184,12 @@ class TestSearchUserInstallations:
         )
 
         # Assert
-        assert result.items == ['inst-1', 'inst-2']
+        assert result.items == ["inst-1", "inst-2"]
         # next_page_id is base64-encoded
         assert result.next_page_id == encode_page_id(2)
 
     @pytest.mark.asyncio
-    @patch('openhands.app_server.git.git_router.ProviderHandler')
+    @patch("openhands.app_server.git.git_router.ProviderHandler")
     async def test_returns_second_page_correctly(self, mock_handler_cls):
         """Test that second page of installations is returned correctly."""
         # Arrange
@@ -197,9 +198,9 @@ class TestSearchUserInstallations:
 
         mock_context = _make_mock_user_context(
             provider_tokens={
-                ProviderType.GITHUB: ProviderToken(user_id='user-123', token='token')
+                ProviderType.GITHUB: ProviderToken(user_id="user-123", token="token")
             },
-            user_id='user-123',
+            user_id="user-123",
         )
 
         # Act - request second page
@@ -211,7 +212,7 @@ class TestSearchUserInstallations:
         )
 
         # Assert
-        assert result.items == ['inst-3', 'inst-4']
+        assert result.items == ["inst-3", "inst-4"]
         assert result.next_page_id == encode_page_id(4)
 
 
@@ -220,7 +221,7 @@ class TestSearchRepositories:
     """Test suite for search_repositories function (handles both user repos and search)."""
 
     @pytest.mark.asyncio
-    @patch('openhands.app_server.git.git_router.ProviderHandler')
+    @patch("openhands.app_server.git.git_router.ProviderHandler")
     async def test_returns_user_repositories_without_query(self, mock_handler_cls):
         """Test that repositories_search returns user repositories when no query is provided."""
         # Arrange
@@ -228,20 +229,20 @@ class TestSearchRepositories:
         mock_handler.get_repositories = AsyncMock(
             return_value=[
                 Repository(
-                    id='1',
-                    full_name='user/repo1',
+                    id="1",
+                    full_name="user/repo1",
                     git_provider=ProviderType.GITHUB,
                     is_public=True,
                 ),
                 Repository(
-                    id='2',
-                    full_name='user/repo2',
+                    id="2",
+                    full_name="user/repo2",
                     git_provider=ProviderType.GITHUB,
                     is_public=False,
                 ),
                 Repository(
-                    id='3',
-                    full_name='user/repo3',
+                    id="3",
+                    full_name="user/repo3",
                     git_provider=ProviderType.GITHUB,
                     is_public=True,
                 ),
@@ -251,9 +252,9 @@ class TestSearchRepositories:
 
         mock_context = _make_mock_user_context(
             provider_tokens={
-                ProviderType.GITHUB: ProviderToken(user_id='user-123', token='token')
+                ProviderType.GITHUB: ProviderToken(user_id="user-123", token="token")
             },
-            user_id='user-123',
+            user_id="user-123",
         )
 
         # Act - call without query to get user repos
@@ -268,13 +269,13 @@ class TestSearchRepositories:
 
         # Assert
         assert len(result.items) == 3
-        assert result.items[0].id == '1'
-        assert result.items[1].id == '2'
-        assert result.items[2].id == '3'
+        assert result.items[0].id == "1"
+        assert result.items[1].id == "2"
+        assert result.items[2].id == "3"
         assert result.next_page_id is None  # No more pages
 
     @pytest.mark.asyncio
-    @patch('openhands.app_server.git.git_router.ProviderHandler')
+    @patch("openhands.app_server.git.git_router.ProviderHandler")
     async def test_search_repositories_with_query(self, mock_handler_cls):
         """Test repository search when query is provided.
 
@@ -286,14 +287,14 @@ class TestSearchRepositories:
         mock_handler.search_repositories = AsyncMock(
             return_value=[
                 Repository(
-                    id='10',
-                    full_name='org/searched-repo',
+                    id="10",
+                    full_name="org/searched-repo",
                     git_provider=ProviderType.GITHUB,
                     is_public=True,
                 ),
                 Repository(
-                    id='11',
-                    full_name='user/searched-repo',
+                    id="11",
+                    full_name="user/searched-repo",
                     git_provider=ProviderType.GITHUB,
                     is_public=False,
                 ),
@@ -303,15 +304,15 @@ class TestSearchRepositories:
 
         mock_context = _make_mock_user_context(
             provider_tokens={
-                ProviderType.GITHUB: ProviderToken(user_id='user-123', token='token')
+                ProviderType.GITHUB: ProviderToken(user_id="user-123", token="token")
             },
-            user_id='user-123',
+            user_id="user-123",
         )
 
         # Act - call with query and sort_order to trigger search path
         result = await search_repositories(
             provider=ProviderType.GITHUB,
-            query='my-search-term',
+            query="my-search-term",
             installation_id=None,
             page_id=None,
             limit=10,
@@ -324,22 +325,22 @@ class TestSearchRepositories:
         call_kwargs = mock_handler.search_repositories.call_args.kwargs
 
         # Verify query is passed
-        assert call_kwargs.get('query') == 'my-search-term'
+        assert call_kwargs.get("query") == "my-search-term"
 
         # Verify sort and order are parsed from sort_order ('stars-desc' -> sort='stars', order='desc')
-        assert call_kwargs.get('sort') == 'stars'
-        assert call_kwargs.get('order') == 'desc'
+        assert call_kwargs.get("sort") == "stars"
+        assert call_kwargs.get("order") == "desc"
 
         # Verify per_page is limit + 1
-        assert call_kwargs.get('per_page') == 11
+        assert call_kwargs.get("per_page") == 11
 
         # Verify results are returned
         assert len(result.items) == 2
-        assert result.items[0].id == '10'
-        assert result.items[1].id == '11'
+        assert result.items[0].id == "10"
+        assert result.items[1].id == "11"
 
     @pytest.mark.asyncio
-    @patch('openhands.app_server.git.git_router.ProviderHandler')
+    @patch("openhands.app_server.git.git_router.ProviderHandler")
     async def test_search_repositories_sort_order_asc(self, mock_handler_cls):
         """Test that sort_order ascending is parsed correctly."""
         # Arrange
@@ -349,15 +350,15 @@ class TestSearchRepositories:
 
         mock_context = _make_mock_user_context(
             provider_tokens={
-                ProviderType.GITHUB: ProviderToken(user_id='user-123', token='token')
+                ProviderType.GITHUB: ProviderToken(user_id="user-123", token="token")
             },
-            user_id='user-123',
+            user_id="user-123",
         )
 
         # Act - call with sort_order ascending
         await search_repositories(
             provider=ProviderType.GITHUB,
-            query='test',
+            query="test",
             installation_id=None,
             page_id=None,
             limit=10,
@@ -367,11 +368,11 @@ class TestSearchRepositories:
 
         # Assert
         call_kwargs = mock_handler.search_repositories.call_args.kwargs
-        assert call_kwargs.get('sort') == 'forks'
-        assert call_kwargs.get('order') == 'asc'
+        assert call_kwargs.get("sort") == "forks"
+        assert call_kwargs.get("order") == "asc"
 
     @pytest.mark.asyncio
-    @patch('openhands.app_server.git.git_router.ProviderHandler')
+    @patch("openhands.app_server.git.git_router.ProviderHandler")
     async def test_search_repositories_default_sort_order(self, mock_handler_cls):
         """Test default sort order when sort_order is not provided."""
         # Arrange
@@ -381,15 +382,15 @@ class TestSearchRepositories:
 
         mock_context = _make_mock_user_context(
             provider_tokens={
-                ProviderType.GITHUB: ProviderToken(user_id='user-123', token='token')
+                ProviderType.GITHUB: ProviderToken(user_id="user-123", token="token")
             },
-            user_id='user-123',
+            user_id="user-123",
         )
 
         # Act - call with query but no sort_order (uses default: stars, desc)
         await search_repositories(
             provider=ProviderType.GITHUB,
-            query='test',
+            query="test",
             installation_id=None,
             page_id=None,
             limit=10,
@@ -399,11 +400,11 @@ class TestSearchRepositories:
 
         # Assert - defaults should be used
         call_kwargs = mock_handler.search_repositories.call_args.kwargs
-        assert call_kwargs.get('sort') == 'stars'  # Default
-        assert call_kwargs.get('order') == 'desc'  # Default
+        assert call_kwargs.get("sort") == "stars"  # Default
+        assert call_kwargs.get("order") == "desc"  # Default
 
     @pytest.mark.asyncio
-    @patch('openhands.app_server.git.git_router.ProviderHandler')
+    @patch("openhands.app_server.git.git_router.ProviderHandler")
     async def test_pagination_works_across_pages(self, mock_handler_cls):
         """Test that pagination works correctly across multiple pages.
 
@@ -419,12 +420,12 @@ class TestSearchRepositories:
         # Second call (page=2): return 3 items, meaning there's a next page
         # Third call (page=3): return 2 items, meaning it's the last page
         def mock_get_repositories(**kwargs):
-            page = kwargs.get('page', 1)
+            page = kwargs.get("page", 1)
             if page == 1:
                 return [
                     Repository(
                         id=str(i),
-                        full_name=f'user/repo{i}',
+                        full_name=f"user/repo{i}",
                         git_provider=ProviderType.GITHUB,
                         is_public=True,
                     )
@@ -434,7 +435,7 @@ class TestSearchRepositories:
                 return [
                     Repository(
                         id=str(i),
-                        full_name=f'user/repo{i}',
+                        full_name=f"user/repo{i}",
                         git_provider=ProviderType.GITHUB,
                         is_public=True,
                     )
@@ -444,7 +445,7 @@ class TestSearchRepositories:
                 return [
                     Repository(
                         id=str(i),
-                        full_name=f'user/repo{i}',
+                        full_name=f"user/repo{i}",
                         git_provider=ProviderType.GITHUB,
                         is_public=True,
                     )
@@ -456,9 +457,9 @@ class TestSearchRepositories:
 
         mock_context = _make_mock_user_context(
             provider_tokens={
-                ProviderType.GITHUB: ProviderToken(user_id='user-123', token='token')
+                ProviderType.GITHUB: ProviderToken(user_id="user-123", token="token")
             },
-            user_id='user-123',
+            user_id="user-123",
         )
 
         # Act - First page (page=1)
@@ -474,8 +475,8 @@ class TestSearchRepositories:
 
         # Assert - First page returns 2 items (truncated from limit+1=3), with next_page_id
         assert len(result_page1.items) == 2
-        assert result_page1.items[0].id == '1'
-        assert result_page1.items[1].id == '2'
+        assert result_page1.items[0].id == "1"
+        assert result_page1.items[1].id == "2"
         assert result_page1.next_page_id == encode_page_id(2)
 
         # Act - Second page (page=2)
@@ -491,13 +492,13 @@ class TestSearchRepositories:
 
         # Assert - Second page returns next 2 items
         assert len(result_page2.items) == 2
-        assert result_page2.items[0].id == '4'
-        assert result_page2.items[1].id == '5'
+        assert result_page2.items[0].id == "4"
+        assert result_page2.items[1].id == "5"
         # next_page_id = page + 1 = 2 + 1 = 3, encoded as base64 = 'Mw'
         assert result_page2.next_page_id == encode_page_id(3)
 
     @pytest.mark.asyncio
-    @patch('openhands.app_server.git.git_router.ProviderHandler')
+    @patch("openhands.app_server.git.git_router.ProviderHandler")
     async def test_passes_sort_parameter_to_provider(self, mock_handler_cls):
         """Test that sort parameter is passed through to the provider handler."""
         # Arrange
@@ -507,9 +508,9 @@ class TestSearchRepositories:
 
         mock_context = _make_mock_user_context(
             provider_tokens={
-                ProviderType.GITHUB: ProviderToken(user_id='user-123', token='token')
+                ProviderType.GITHUB: ProviderToken(user_id="user-123", token="token")
             },
-            user_id='user-123',
+            user_id="user-123",
         )
 
         # Act
@@ -525,10 +526,10 @@ class TestSearchRepositories:
         # Assert - verify get_repositories was called with the sort parameter
         mock_handler.get_repositories.assert_called_once()
         call_kwargs = mock_handler.get_repositories.call_args.kwargs
-        assert call_kwargs.get('sort') == 'pushed'
+        assert call_kwargs.get("sort") == "pushed"
 
     @pytest.mark.asyncio
-    @patch('openhands.app_server.git.git_router.ProviderHandler')
+    @patch("openhands.app_server.git.git_router.ProviderHandler")
     async def test_passes_installation_id_to_provider(self, mock_handler_cls):
         """Test that installation_id filtering is passed through to the provider."""
         # Arrange
@@ -538,16 +539,16 @@ class TestSearchRepositories:
 
         mock_context = _make_mock_user_context(
             provider_tokens={
-                ProviderType.GITHUB: ProviderToken(user_id='user-123', token='token')
+                ProviderType.GITHUB: ProviderToken(user_id="user-123", token="token")
             },
-            user_id='user-123',
+            user_id="user-123",
         )
 
         # Act
         await search_repositories(
             provider=ProviderType.GITHUB,
             query=None,
-            installation_id='app-123',
+            installation_id="app-123",
             page_id=None,
             limit=10,
             sort_order=None,
@@ -557,10 +558,10 @@ class TestSearchRepositories:
         # Assert - verify get_repositories was called with installation_id
         mock_handler.get_repositories.assert_called_once()
         call_kwargs = mock_handler.get_repositories.call_args.kwargs
-        assert call_kwargs.get('installation_id') == 'app-123'
+        assert call_kwargs.get("installation_id") == "app-123"
 
     @pytest.mark.asyncio
-    @patch('openhands.app_server.git.git_router.ProviderHandler')
+    @patch("openhands.app_server.git.git_router.ProviderHandler")
     async def test_returns_paginated_search_results(self, mock_handler_cls):
         """Test that search repositories are returned with pagination when query is provided."""
         # Arrange
@@ -568,20 +569,20 @@ class TestSearchRepositories:
         mock_handler.search_repositories = AsyncMock(
             return_value=[
                 Repository(
-                    id='1',
-                    full_name='user/repo1',
+                    id="1",
+                    full_name="user/repo1",
                     git_provider=ProviderType.GITHUB,
                     is_public=True,
                 ),
                 Repository(
-                    id='2',
-                    full_name='user/repo2',
+                    id="2",
+                    full_name="user/repo2",
                     git_provider=ProviderType.GITHUB,
                     is_public=True,
                 ),
                 Repository(
-                    id='3',
-                    full_name='user/repo3',
+                    id="3",
+                    full_name="user/repo3",
                     git_provider=ProviderType.GITHUB,
                     is_public=True,
                 ),
@@ -591,15 +592,15 @@ class TestSearchRepositories:
 
         mock_context = _make_mock_user_context(
             provider_tokens={
-                ProviderType.GITHUB: ProviderToken(user_id='user-123', token='token')
+                ProviderType.GITHUB: ProviderToken(user_id="user-123", token="token")
             },
-            user_id='user-123',
+            user_id="user-123",
         )
 
         # Act
         result = await search_repositories(
             provider=ProviderType.GITHUB,
-            query='test',
+            query="test",
             page_id=None,
             limit=2,
             sort_order=SortOrder.STAR_DESC,
@@ -609,14 +610,14 @@ class TestSearchRepositories:
         # Assert
         assert result.items == [
             Repository(
-                id='1',
-                full_name='user/repo1',
+                id="1",
+                full_name="user/repo1",
                 git_provider=ProviderType.GITHUB,
                 is_public=True,
             ),
             Repository(
-                id='2',
-                full_name='user/repo2',
+                id="2",
+                full_name="user/repo2",
                 git_provider=ProviderType.GITHUB,
                 is_public=True,
             ),
@@ -624,7 +625,7 @@ class TestSearchRepositories:
         assert result.next_page_id == encode_page_id(2)
 
     @pytest.mark.asyncio
-    @patch('openhands.app_server.git.git_router.ProviderHandler')
+    @patch("openhands.app_server.git.git_router.ProviderHandler")
     async def test_parses_sort_order_correctly(self, mock_handler_cls):
         """Test that sort_order enum is parsed into sort and order components."""
         # Arrange
@@ -634,15 +635,15 @@ class TestSearchRepositories:
 
         mock_context = _make_mock_user_context(
             provider_tokens={
-                ProviderType.GITHUB: ProviderToken(user_id='user-123', token='token')
+                ProviderType.GITHUB: ProviderToken(user_id="user-123", token="token")
             },
-            user_id='user-123',
+            user_id="user-123",
         )
 
         # Act
         await search_repositories(
             provider=ProviderType.GITHUB,
-            query='test',
+            query="test",
             page_id=None,
             limit=5,
             sort_order=SortOrder.FORKS_ASC,
@@ -652,11 +653,11 @@ class TestSearchRepositories:
         # Assert - verify search_repositories was called with parsed sort and order
         mock_handler.search_repositories.assert_called_once()
         call_kwargs = mock_handler.search_repositories.call_args.kwargs
-        assert call_kwargs.get('sort') == 'forks'
-        assert call_kwargs.get('order') == 'asc'
+        assert call_kwargs.get("sort") == "forks"
+        assert call_kwargs.get("order") == "asc"
 
     @pytest.mark.asyncio
-    @patch('openhands.app_server.git.git_router.ProviderHandler')
+    @patch("openhands.app_server.git.git_router.ProviderHandler")
     async def test_returns_empty_first_page(self, mock_handler_cls):
         """Test that empty results return empty items with no next_page_id."""
         # Arrange
@@ -666,15 +667,15 @@ class TestSearchRepositories:
 
         mock_context = _make_mock_user_context(
             provider_tokens={
-                ProviderType.GITHUB: ProviderToken(user_id='user-123', token='token')
+                ProviderType.GITHUB: ProviderToken(user_id="user-123", token="token")
             },
-            user_id='user-123',
+            user_id="user-123",
         )
 
         # Act
         result = await search_repositories(
             provider=ProviderType.GITHUB,
-            query='nonexistent-repo-xyz',
+            query="nonexistent-repo-xyz",
             page_id=None,
             limit=5,
             sort_order=SortOrder.STAR_DESC,
@@ -688,12 +689,12 @@ class TestSearchRepositories:
     def test_returns_403_when_no_provider_tokens(self, test_client, monkeypatch):
         """Test that 403 is returned when no provider tokens."""
         with patch(
-            'openhands.app_server.user.auth_user_context.AuthUserContext.get_provider_tokens',
+            "openhands.app_server.user.auth_user_context.AuthUserContext.get_provider_tokens",
             AsyncMock(return_value=None),
         ):
             response = test_client.get(
-                '/git/repositories/search',
-                params={'provider': 'github', 'query': 'test'},
+                "/git/repositories/search",
+                params={"provider": "github", "query": "test"},
             )
             assert response.status_code == status.HTTP_403_FORBIDDEN
 
@@ -703,32 +704,32 @@ class TestSearchBranches:
     """Test suite for search_branches function."""
 
     @pytest.mark.asyncio
-    @patch('openhands.app_server.git.git_router.ProviderHandler')
+    @patch("openhands.app_server.git.git_router.ProviderHandler")
     async def test_returns_paginated_branches(self, mock_handler_cls):
         """Test that search branches are returned with pagination."""
         # Arrange
         mock_handler = MagicMock()
         mock_handler.search_branches = AsyncMock(
             return_value=[
-                Branch(name='main', commit_sha='abc123', protected=False),
-                Branch(name='develop', commit_sha='def456', protected=False),
-                Branch(name='feature-branch', commit_sha='ghi789', protected=False),
+                Branch(name="main", commit_sha="abc123", protected=False),
+                Branch(name="develop", commit_sha="def456", protected=False),
+                Branch(name="feature-branch", commit_sha="ghi789", protected=False),
             ]
         )
         mock_handler_cls.return_value = mock_handler
 
         mock_context = _make_mock_user_context(
             provider_tokens={
-                ProviderType.GITHUB: ProviderToken(user_id='user-123', token='token')
+                ProviderType.GITHUB: ProviderToken(user_id="user-123", token="token")
             },
-            user_id='user-123',
+            user_id="user-123",
         )
 
         # Act
         result = await search_branches(
             provider=ProviderType.GITHUB,
-            repository='user/repo',
-            query='main',
+            repository="user/repo",
+            query="main",
             page_id=None,
             limit=2,
             user_context=mock_context,
@@ -736,12 +737,12 @@ class TestSearchBranches:
 
         # Assert
         assert len(result.items) == 2
-        assert result.items[0].name == 'main'
-        assert result.items[1].name == 'develop'
+        assert result.items[0].name == "main"
+        assert result.items[1].name == "develop"
         assert result.next_page_id == encode_page_id(2)
 
     @pytest.mark.asyncio
-    @patch('openhands.app_server.git.git_router.ProviderHandler')
+    @patch("openhands.app_server.git.git_router.ProviderHandler")
     async def test_passes_parameters_to_provider(self, mock_handler_cls):
         """Test that all parameters are passed through to the provider."""
         # Arrange
@@ -751,16 +752,16 @@ class TestSearchBranches:
 
         mock_context = _make_mock_user_context(
             provider_tokens={
-                ProviderType.GITHUB: ProviderToken(user_id='user-123', token='token')
+                ProviderType.GITHUB: ProviderToken(user_id="user-123", token="token")
             },
-            user_id='user-123',
+            user_id="user-123",
         )
 
         # Act
         await search_branches(
             provider=ProviderType.GITHUB,
-            repository='user/repo',
-            query='feature',
+            repository="user/repo",
+            query="feature",
             page_id=None,
             limit=10,
             user_context=mock_context,
@@ -769,23 +770,23 @@ class TestSearchBranches:
         # Assert
         mock_handler.search_branches.assert_called_once()
         call_kwargs = mock_handler.search_branches.call_args.kwargs
-        assert call_kwargs.get('selected_provider') == ProviderType.GITHUB
-        assert call_kwargs.get('repository') == 'user/repo'
-        assert call_kwargs.get('query') == 'feature'
-        assert call_kwargs.get('per_page') == 11  # limit + 1
+        assert call_kwargs.get("selected_provider") == ProviderType.GITHUB
+        assert call_kwargs.get("repository") == "user/repo"
+        assert call_kwargs.get("query") == "feature"
+        assert call_kwargs.get("per_page") == 11  # limit + 1
 
     def test_returns_403_when_no_provider_tokens(self, test_client):
         """Test that 403 is returned when no provider tokens."""
         with patch(
-            'openhands.app_server.user.auth_user_context.AuthUserContext.get_provider_tokens',
+            "openhands.app_server.user.auth_user_context.AuthUserContext.get_provider_tokens",
             AsyncMock(return_value=None),
         ):
             response = test_client.get(
-                '/git/branches/search',
+                "/git/branches/search",
                 params={
-                    'provider': 'github',
-                    'repository': 'user/repo',
-                    'query': 'main',
+                    "provider": "github",
+                    "repository": "user/repo",
+                    "query": "main",
                 },
             )
             assert response.status_code == status.HTTP_403_FORBIDDEN
@@ -796,7 +797,7 @@ class TestSearchSuggestedTasks:
     """Test suite for search_suggested_tasks function."""
 
     @pytest.mark.asyncio
-    @patch('openhands.app_server.git.git_router.ProviderHandler')
+    @patch("openhands.app_server.git.git_router.ProviderHandler")
     async def test_returns_paginated_tasks(self, mock_handler_cls):
         """Test that suggested tasks are returned with pagination."""
         # Arrange
@@ -806,23 +807,23 @@ class TestSearchSuggestedTasks:
                 SuggestedTask(
                     git_provider=ProviderType.GITHUB,
                     task_type=TaskType.OPEN_ISSUE,
-                    repo='user/repo',
+                    repo="user/repo",
                     issue_number=1,
-                    title='Fix bug in login',
+                    title="Fix bug in login",
                 ),
                 SuggestedTask(
                     git_provider=ProviderType.GITHUB,
                     task_type=TaskType.OPEN_PR,
-                    repo='user/repo',
+                    repo="user/repo",
                     issue_number=2,
-                    title='Add new feature',
+                    title="Add new feature",
                 ),
                 SuggestedTask(
                     git_provider=ProviderType.GITHUB,
                     task_type=TaskType.OPEN_ISSUE,
-                    repo='user/repo2',
+                    repo="user/repo2",
                     issue_number=3,
-                    title='Update documentation',
+                    title="Update documentation",
                 ),
             ]
         )
@@ -830,9 +831,9 @@ class TestSearchSuggestedTasks:
 
         mock_context = _make_mock_user_context(
             provider_tokens={
-                ProviderType.GITHUB: ProviderToken(user_id='user-123', token='token')
+                ProviderType.GITHUB: ProviderToken(user_id="user-123", token="token")
             },
-            user_id='user-123',
+            user_id="user-123",
         )
 
         # Act
@@ -849,7 +850,7 @@ class TestSearchSuggestedTasks:
         assert result.next_page_id == encode_page_id(2)
 
     @pytest.mark.asyncio
-    @patch('openhands.app_server.git.git_router.ProviderHandler')
+    @patch("openhands.app_server.git.git_router.ProviderHandler")
     async def test_returns_second_page(self, mock_handler_cls):
         """Test that second page returns correct items."""
         # Arrange
@@ -859,23 +860,23 @@ class TestSearchSuggestedTasks:
                 SuggestedTask(
                     git_provider=ProviderType.GITHUB,
                     task_type=TaskType.OPEN_ISSUE,
-                    repo='user/repo',
+                    repo="user/repo",
                     issue_number=1,
-                    title='Fix bug in login',
+                    title="Fix bug in login",
                 ),
                 SuggestedTask(
                     git_provider=ProviderType.GITHUB,
                     task_type=TaskType.OPEN_PR,
-                    repo='user/repo',
+                    repo="user/repo",
                     issue_number=2,
-                    title='Add new feature',
+                    title="Add new feature",
                 ),
                 SuggestedTask(
                     git_provider=ProviderType.GITHUB,
                     task_type=TaskType.OPEN_ISSUE,
-                    repo='user/repo2',
+                    repo="user/repo2",
                     issue_number=3,
-                    title='Update documentation',
+                    title="Update documentation",
                 ),
             ]
         )
@@ -883,9 +884,9 @@ class TestSearchSuggestedTasks:
 
         mock_context = _make_mock_user_context(
             provider_tokens={
-                ProviderType.GITHUB: ProviderToken(user_id='user-123', token='token')
+                ProviderType.GITHUB: ProviderToken(user_id="user-123", token="token")
             },
-            user_id='user-123',
+            user_id="user-123",
         )
 
         # Act - request second page
@@ -901,7 +902,7 @@ class TestSearchSuggestedTasks:
         assert result.next_page_id is None
 
     @pytest.mark.asyncio
-    @patch('openhands.app_server.git.git_router.ProviderHandler')
+    @patch("openhands.app_server.git.git_router.ProviderHandler")
     async def test_returns_empty_when_no_tasks(self, mock_handler_cls):
         """Test that empty results return empty items."""
         # Arrange
@@ -911,9 +912,9 @@ class TestSearchSuggestedTasks:
 
         mock_context = _make_mock_user_context(
             provider_tokens={
-                ProviderType.GITHUB: ProviderToken(user_id='user-123', token='token')
+                ProviderType.GITHUB: ProviderToken(user_id="user-123", token="token")
             },
-            user_id='user-123',
+            user_id="user-123",
         )
 
         # Act
@@ -930,8 +931,117 @@ class TestSearchSuggestedTasks:
     def test_returns_403_when_no_provider_tokens(self, test_client):
         """Test that 403 is returned when no provider tokens."""
         with patch(
-            'openhands.app_server.user.auth_user_context.AuthUserContext.get_provider_tokens',
+            "openhands.app_server.user.auth_user_context.AuthUserContext.get_provider_tokens",
             AsyncMock(return_value=None),
         ):
             response = test_client.get('/git/suggested-tasks/search')
             assert response.status_code == status.HTTP_403_FORBIDDEN
+            assert response.status_code == status.HTTP_401_UNAUTHORIZED
+
+
+@pytest.mark.asyncio
+class TestCheckRepositoryOnboardingFiles:
+    """Test suite for check_repository_onboarding_files function."""
+
+    @pytest.mark.asyncio
+    @patch("openhands.app_server.git.git_router.ProviderHandler")
+    async def test_returns_both_files_exist(self, mock_handler_cls):
+        """Test response when both AGENTS.md and REPO.md exist."""
+        mock_handler = MagicMock()
+        mock_handler.check_repository_file_exists = AsyncMock(return_value=True)
+        mock_handler_cls.return_value = mock_handler
+
+        mock_context = _make_mock_user_context(
+            provider_tokens={
+                ProviderType.GITHUB: ProviderToken(user_id="user-123", token="token")
+            },
+            user_id="user-123",
+        )
+
+        result = await check_repository_onboarding_files(
+            provider=ProviderType.GITHUB,
+            repository="user/repo",
+            branch="main",
+            user_context=mock_context,
+        )
+
+        assert result.has_agents_md is True
+        assert result.has_repo_md is True
+
+    @pytest.mark.asyncio
+    @patch("openhands.app_server.git.git_router.ProviderHandler")
+    async def test_returns_no_files_exist(self, mock_handler_cls):
+        """Test response when neither AGENTS.md nor REPO.md exist."""
+        mock_handler = MagicMock()
+        mock_handler.check_repository_file_exists = AsyncMock(return_value=False)
+        mock_handler_cls.return_value = mock_handler
+
+        mock_context = _make_mock_user_context(
+            provider_tokens={
+                ProviderType.GITHUB: ProviderToken(user_id="user-123", token="token")
+            },
+            user_id="user-123",
+        )
+
+        result = await check_repository_onboarding_files(
+            provider=ProviderType.GITHUB,
+            repository="user/repo",
+            branch=None,
+            user_context=mock_context,
+        )
+
+        assert result.has_agents_md is False
+        assert result.has_repo_md is False
+
+    @pytest.mark.asyncio
+    @patch("openhands.app_server.git.git_router.ProviderHandler")
+    async def test_returns_only_agents_md_exists(self, mock_handler_cls):
+        """Test response when only AGENTS.md exists."""
+        mock_handler = MagicMock()
+
+        async def check_file(repo, file_path, provider, branch):
+            return file_path == "AGENTS.md"
+
+        mock_handler.check_repository_file_exists = AsyncMock(side_effect=check_file)
+        mock_handler_cls.return_value = mock_handler
+
+        mock_context = _make_mock_user_context(
+            provider_tokens={
+                ProviderType.GITHUB: ProviderToken(user_id="user-123", token="token")
+            },
+            user_id="user-123",
+        )
+
+        result = await check_repository_onboarding_files(
+            provider=ProviderType.GITHUB,
+            repository="user/repo",
+            branch="main",
+            user_context=mock_context,
+        )
+
+        assert result.has_agents_md is True
+        assert result.has_repo_md is False
+
+    def test_returns_401_when_no_provider_tokens(self, test_client):
+        """Test that 401 is returned when no provider tokens."""
+        with patch(
+            "openhands.app_server.user.auth_user_context.AuthUserContext.get_provider_tokens",
+            AsyncMock(return_value=None),
+        ):
+            response = test_client.get(
+                "/git/repositories/onboarding-files",
+                params={"provider": "github", "repository": "user/repo"},
+            )
+            assert response.status_code == status.HTTP_401_UNAUTHORIZED
+
+    def test_returns_422_for_missing_repository(self, test_client):
+        """Test that 422 is returned when repository is missing."""
+        with patch(
+            "openhands.app_server.user.auth_user_context.AuthUserContext.get_provider_tokens",
+            AsyncMock(return_value={"github": "token"}),
+        ):
+            response = test_client.get(
+                "/git/repositories/onboarding-files",
+                params={"provider": "github"},
+            )
+            assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY

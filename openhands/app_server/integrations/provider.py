@@ -61,22 +61,22 @@ class ProviderToken(BaseModel):
         if isinstance(token_value, cls):
             return token_value
         elif isinstance(token_value, dict):
-            token_str = token_value.get('token', '')
+            token_str = token_value.get("token", "")
             # Override with emtpy string if it was set to None
             # Cannot pass None to SecretStr
             if token_str is None:
-                token_str = ''  # type: ignore[unreachable]
-            user_id = token_value.get('user_id')
-            host = token_value.get('host')
+                token_str = ""  # type: ignore[unreachable]
+            user_id = token_value.get("user_id")
+            host = token_value.get("host")
             return cls(token=SecretStr(token_str), user_id=user_id, host=host)
 
         else:
-            raise ValueError('Unsupported Provider token type')
+            raise ValueError("Unsupported Provider token type")
 
 
 class CustomSecret(BaseModel):
-    secret: SecretStr = Field(default_factory=lambda: SecretStr(''))
-    description: str = Field(default='')
+    secret: SecretStr = Field(default_factory=lambda: SecretStr(""))
+    description: str = Field(default="")
 
     model_config = ConfigDict(
         frozen=True,  # Makes the entire model immutable
@@ -89,12 +89,12 @@ class CustomSecret(BaseModel):
         if isinstance(secret_value, CustomSecret):
             return secret_value
         elif isinstance(secret_value, dict):
-            secret = secret_value.get('secret', '')
-            description = secret_value.get('description', '')
+            secret = secret_value.get("secret", "")
+            description = secret_value.get("description", "")
             return cls(secret=SecretStr(secret), description=description)
 
         else:
-            raise ValueError('Unsupport Provider token type')
+            raise ValueError("Unsupport Provider token type")
 
 
 PROVIDER_TOKEN_TYPE = Mapping[ProviderType, ProviderToken]
@@ -104,11 +104,11 @@ CUSTOM_SECRETS_TYPE = Mapping[str, CustomSecret]
 class ProviderHandler:
     # Class variable for provider domains
     PROVIDER_DOMAINS: dict[ProviderType, str] = {
-        ProviderType.GITHUB: 'github.com',
+        ProviderType.GITHUB: "github.com",
         ProviderType.GITLAB: GITLAB_HOST,
-        ProviderType.BITBUCKET: 'bitbucket.org',
-        ProviderType.FORGEJO: 'codeberg.org',
-        ProviderType.AZURE_DEVOPS: 'dev.azure.com',
+        ProviderType.BITBUCKET: "bitbucket.org",
+        ProviderType.FORGEJO: "codeberg.org",
+        ProviderType.AZURE_DEVOPS: "dev.azure.com",
     }
 
     def __init__(
@@ -122,7 +122,7 @@ class ProviderHandler:
     ):
         if not isinstance(provider_tokens, MappingProxyType):
             raise TypeError(
-                f'provider_tokens must be a MappingProxyType, got {type(provider_tokens).__name__}'
+                f"provider_tokens must be a MappingProxyType, got {type(provider_tokens).__name__}"
             )
 
         self.service_class_map: dict[ProviderType, type[GitService]] = {
@@ -140,9 +140,9 @@ class ProviderHandler:
         self.session_api_key = session_api_key
         self.sid = sid
         self._provider_tokens = provider_tokens
-        WEB_HOST = os.getenv('WEB_HOST', '').strip()
+        WEB_HOST = os.getenv("WEB_HOST", "").strip()
         self.REFRESH_TOKEN_URL = (
-            f'https://{WEB_HOST}/api/refresh-tokens' if WEB_HOST else None
+            f"https://{WEB_HOST}/api/refresh-tokens" if WEB_HOST else None
         )
 
     @property
@@ -175,29 +175,29 @@ class ProviderHandler:
                 continue
         for provider, exc in exceptions:
             logger.warning(
-                f'Failed to get user from provider {provider}: {exc}',
+                f"Failed to get user from provider {provider}: {exc}",
                 exc_info=(type(exc), exc, exc.__traceback__),
             )
-        raise AuthenticationError('Need valid provider token')
+        raise AuthenticationError("Need valid provider token")
 
     async def _get_latest_provider_token(
         self, provider: ProviderType
     ) -> SecretStr | None:
         """Get latest token from service"""
         if not self.REFRESH_TOKEN_URL:
-            logger.warning('Refresh token URL not set')
+            logger.warning("Refresh token URL not set")
             return None
         try:
             async with httpx.AsyncClient(verify=httpx_verify_option()) as client:
                 headers = (
-                    {'X-Session-API-Key': self.session_api_key}
+                    {"X-Session-API-Key": self.session_api_key}
                     if self.session_api_key
                     else {}
                 )
                 resp = await client.get(
                     self.REFRESH_TOKEN_URL,
                     headers=headers,
-                    params={'provider': provider.value, 'sid': self.sid},
+                    params={"provider": provider.value, "sid": self.sid},
                 )
 
             resp.raise_for_status()
@@ -206,7 +206,7 @@ class ProviderHandler:
 
         except Exception as e:
             logger.error(
-                f'Failed to fetch latest token for provider {provider}: {e}',
+                f"Failed to fetch latest token for provider {provider}: {e}",
                 exc_info=True,
             )
 
@@ -217,7 +217,7 @@ class ProviderHandler:
         try:
             return await service.get_installations()
         except Exception as e:
-            logger.warning(f'Failed to get github installations {e}')
+            logger.warning(f"Failed to get github installations {e}")
 
         return []
 
@@ -226,7 +226,7 @@ class ProviderHandler:
         try:
             return await service.get_installations()
         except Exception as e:
-            logger.warning(f'Failed to get bitbucket workspaces {e}')
+            logger.warning(f"Failed to get bitbucket workspaces {e}")
 
         return []
 
@@ -238,7 +238,7 @@ class ProviderHandler:
         try:
             return await service.get_installations()
         except Exception as e:
-            logger.warning(f'Failed to get bitbucket data center projects {e}')
+            logger.warning(f"Failed to get bitbucket data center projects {e}")
 
         return []
 
@@ -247,7 +247,7 @@ class ProviderHandler:
         try:
             return await service.get_organizations_from_installations()  # type: ignore[attr-defined]
         except Exception as e:
-            logger.warning(f'Failed to get github organizations {e}')
+            logger.warning(f"Failed to get github organizations {e}")
 
         return []
 
@@ -256,7 +256,7 @@ class ProviderHandler:
         try:
             return await service.get_user_groups()  # type: ignore[attr-defined]
         except Exception as e:
-            logger.warning(f'Failed to get gitlab groups {e}')
+            logger.warning(f"Failed to get gitlab groups {e}")
 
         return []
 
@@ -267,7 +267,7 @@ class ProviderHandler:
         try:
             return await service.get_installations()
         except Exception as e:
-            logger.warning(f'Failed to get azure devops organizations {e}')
+            logger.warning(f"Failed to get azure devops organizations {e}")
 
         return []
 
@@ -287,7 +287,7 @@ class ProviderHandler:
         """
         if selected_provider:
             if not page or not per_page:
-                raise ValueError('Failed to provider params for paginating repos')
+                raise ValueError("Failed to provider params for paginating repos")
 
             service = self.get_service(selected_provider)
             return await service.get_paginated_repos(
@@ -304,7 +304,7 @@ class ProviderHandler:
                 # Propagate timeout errors so callers can handle them appropriately
                 raise
             except Exception as e:
-                logger.warning(f'Error fetching repos from {provider}: {e}')
+                logger.warning(f"Error fetching repos from {provider}: {e}")
 
         return all_repos
 
@@ -317,7 +317,7 @@ class ProviderHandler:
                 service_repos = await service.get_suggested_tasks()
                 tasks.extend(service_repos)
             except Exception as e:
-                logger.warning(f'Error fetching repos from {provider}: {e}')
+                logger.warning(f"Error fetching repos from {provider}: {e}")
 
         return tasks
 
@@ -335,7 +335,7 @@ class ProviderHandler:
                 return await service.search_branches(repository, query, per_page)
             except Exception as e:
                 logger.warning(
-                    f'Error searching branches from selected provider {selected_provider}: {e}'
+                    f"Error searching branches from selected provider {selected_provider}: {e}"
                 )
                 return []
 
@@ -345,7 +345,7 @@ class ProviderHandler:
             service = self.get_service(repo_details.git_provider)
             return await service.search_branches(repository, query, per_page)
         except Exception as e:
-            logger.warning(f'Error searching branches for {repository}: {e}')
+            logger.warning(f"Error searching branches for {repository}: {e}")
             return []
 
     async def search_repositories(
@@ -375,7 +375,7 @@ class ProviderHandler:
                 )
                 all_repos.extend(service_repos)
             except Exception as e:
-                logger.warning(f'Error searching repos from {provider}: {e}')
+                logger.warning(f"Error searching repos from {provider}: {e}")
                 continue
 
         return all_repos
@@ -387,7 +387,7 @@ class ProviderHandler:
         default_domain = self.PROVIDER_DOMAINS.get(provider)
         default_host_exists = default_domain is not None and default_domain in query
 
-        return query.startswith(('http://', 'https://')) and (
+        return query.startswith(("http://", "https://")) and (
             custom_host_exists or default_host_exists
         )
 
@@ -404,7 +404,7 @@ class ProviderHandler:
     @classmethod
     def get_provider_env_key(cls, provider: ProviderType) -> str:
         """Map ProviderType value to the environment variable name in the runtime"""
-        return f'{provider.value}_token'.lower()
+        return f"{provider.value}_token".lower()
 
     async def verify_repo_provider(
         self,
@@ -419,14 +419,14 @@ class ProviderHandler:
                 service = self.get_service(specified_provider)
                 return await service.get_repository_details_from_repo_name(repository)
             except Exception as e:
-                errors.append(f'{specified_provider.value}: {str(e)}')
+                errors.append(f"{specified_provider.value}: {str(e)}")
 
         for provider in self.provider_tokens:
             try:
                 service = self.get_service(provider)
                 return await service.get_repository_details_from_repo_name(repository)
             except Exception as e:
-                errors.append(f'{provider.value}: {str(e)}')
+                errors.append(f"{provider.value}: {str(e)}")
 
         # Log detailed error based on whether we had tokens or not
         # For optional repositories (like org-level microagents), use debug level
@@ -434,20 +434,20 @@ class ProviderHandler:
 
         if not self.provider_tokens:
             log_fn(
-                f'Failed to access repository {repository}: No provider tokens available. '
-                f'provider_tokens dict is empty.'
+                f"Failed to access repository {repository}: No provider tokens available. "
+                f"provider_tokens dict is empty."
             )
         elif errors:
             log_fn(
-                f'Failed to access repository {repository} with all available providers. '
-                f'Tried providers: {list(self.provider_tokens.keys())}. '
-                f'Errors: {"; ".join(errors)}'
+                f"Failed to access repository {repository} with all available providers. "
+                f"Tried providers: {list(self.provider_tokens.keys())}. "
+                f"Errors: {'; '.join(errors)}"
             )
         else:
             log_fn(
-                f'Failed to access repository {repository}: Unknown error (no providers tried, no errors recorded)'
+                f"Failed to access repository {repository}: Unknown error (no providers tried, no errors recorded)"
             )
-        raise AuthenticationError(f'Unable to access repo {repository}')
+        raise AuthenticationError(f"Unable to access repo {repository}")
 
     async def get_branches(
         self,
@@ -473,7 +473,7 @@ class ProviderHandler:
                 return await service.get_paginated_branches(repository, page, per_page)
             except Exception as e:
                 logger.warning(
-                    f'Error fetching branches from {specified_provider}: {e}'
+                    f"Error fetching branches from {specified_provider}: {e}"
                 )
 
         for provider in self.provider_tokens:
@@ -481,7 +481,7 @@ class ProviderHandler:
                 service = self.get_service(provider)
                 return await service.get_paginated_branches(repository, page, per_page)
             except Exception as e:
-                logger.warning(f'Error fetching branches from {provider}: {e}')
+                logger.warning(f"Error fetching branches from {provider}: {e}")
 
         # Return empty response if no provider worked
         return PaginatedBranchesResponse(
@@ -509,12 +509,12 @@ class ProviderHandler:
                 repo_name, is_optional=is_optional
             )
         except AuthenticationError:
-            raise Exception('Git provider authentication issue when getting remote URL')
+            raise Exception("Git provider authentication issue when getting remote URL")
 
         provider = repository.git_provider
         repo_name = repository.full_name
 
-        domain = self.PROVIDER_DOMAINS.get(provider, '')
+        domain = self.PROVIDER_DOMAINS.get(provider, "")
 
         # If provider tokens are provided, use the host from the token if available
         # Note: For Azure DevOps, don't use the host field as it may contain org/project path
@@ -524,27 +524,27 @@ class ProviderHandler:
 
         # Detect protocol before normalizing domain
         # Default to https, but preserve http if explicitly specified
-        protocol = 'https'
-        if domain and domain.strip().startswith('http://'):
+        protocol = "https"
+        if domain and domain.strip().startswith("http://"):
             # Check if insecure HTTP access is allowed
             allow_insecure = os.environ.get(
-                'ALLOW_INSECURE_GIT_ACCESS', 'false'
-            ).lower() in ('true', '1', 'yes')
+                "ALLOW_INSECURE_GIT_ACCESS", "false"
+            ).lower() in ("true", "1", "yes")
             if not allow_insecure:
                 raise ValueError(
-                    'Attempting to connect to an insecure git repository over HTTP. '
+                    "Attempting to connect to an insecure git repository over HTTP. "
                     "If you'd like to allow this nonetheless, set "
-                    'ALLOW_INSECURE_GIT_ACCESS=true as an environment variable.'
+                    "ALLOW_INSECURE_GIT_ACCESS=true as an environment variable."
                 )
-            protocol = 'http'
+            protocol = "http"
 
         # Normalize domain to prevent double protocols or path segments
         if domain:
             domain = domain.strip()
-            domain = domain.replace('https://', '').replace('http://', '')
+            domain = domain.replace("https://", "").replace("http://", "")
             # Remove any trailing path like /api/v3 or /api/v4
-            if '/' in domain:
-                domain = domain.split('/')[0]
+            if "/" in domain:
+                domain = domain.split("/")[0]
 
         # Try to use token if available, otherwise use public URL
         if self.provider_tokens and provider in self.provider_tokens:
@@ -553,36 +553,36 @@ class ProviderHandler:
                 token_value = git_token.get_secret_value()
                 if provider == ProviderType.GITLAB:
                     remote_url = (
-                        f'{protocol}://oauth2:{token_value}@{domain}/{repo_name}.git'
+                        f"{protocol}://oauth2:{token_value}@{domain}/{repo_name}.git"
                     )
                 elif provider == ProviderType.BITBUCKET:
                     # For Bitbucket, handle username:app_password format
-                    if ':' in token_value:
+                    if ":" in token_value:
                         # App token format: username:app_password
                         remote_url = (
-                            f'{protocol}://{token_value}@{domain}/{repo_name}.git'
+                            f"{protocol}://{token_value}@{domain}/{repo_name}.git"
                         )
                     else:
                         # Access token format: use x-token-auth
-                        remote_url = f'{protocol}://x-token-auth:{token_value}@{domain}/{repo_name}.git'
+                        remote_url = f"{protocol}://x-token-auth:{token_value}@{domain}/{repo_name}.git"
                 elif provider == ProviderType.BITBUCKET_DATA_CENTER:
                     # DC uses HTTP Basic auth — token must be in username:token format
                     project, repo_slug = (
-                        repo_name.split('/', 1)
-                        if '/' in repo_name
+                        repo_name.split("/", 1)
+                        if "/" in repo_name
                         else (repo_name, repo_name)
                     )
-                    scm_path = f'scm/{project.lower()}/{repo_slug}.git'
+                    scm_path = f"scm/{project.lower()}/{repo_slug}.git"
                     # Percent-encode each credential part so special characters
                     # (e.g. @, #, /) don't break the URL.
-                    if ':' in token_value:
-                        dc_user, dc_pass = token_value.split(':', 1)
+                    if ":" in token_value:
+                        dc_user, dc_pass = token_value.split(":", 1)
                         url_creds = (
-                            f'{quote(dc_user, safe="")}:{quote(dc_pass, safe="")}'
+                            f"{quote(dc_user, safe='')}:{quote(dc_pass, safe='')}"
                         )
                     else:
-                        url_creds = f'x-token-auth:{quote(token_value, safe="")}'
-                    remote_url = f'{protocol}://{url_creds}@{domain}/{scm_path}'
+                        url_creds = f"x-token-auth:{quote(token_value, safe='')}"
+                    remote_url = f"{protocol}://{url_creds}@{domain}/{scm_path}"
                 elif provider == ProviderType.AZURE_DEVOPS:
                     # Azure DevOps uses PAT with Basic auth
                     # Format: https://{anything}:{PAT}@dev.azure.com/{org}/{project}/_git/{repo}
@@ -590,62 +590,108 @@ class ProviderHandler:
                     # We use the org name as the username for clarity
                     # repo_name is in format: org/project/repo
                     logger.info(
-                        f'[Azure DevOps] Constructing authenticated git URL for repository: {repo_name}'
+                        f"[Azure DevOps] Constructing authenticated git URL for repository: {repo_name}"
                     )
-                    logger.debug(f'[Azure DevOps] Original domain: {domain}')
+                    logger.debug(f"[Azure DevOps] Original domain: {domain}")
                     logger.debug(
-                        f'[Azure DevOps] Token available: {bool(token_value)}, '
-                        f'Token length: {len(token_value) if token_value else 0}'
+                        f"[Azure DevOps] Token available: {bool(token_value)}, "
+                        f"Token length: {len(token_value) if token_value else 0}"
                     )
 
                     # Remove domain prefix if it exists in domain variable
-                    clean_domain = domain.replace('https://', '').replace('http://', '')
-                    logger.debug(f'[Azure DevOps] Cleaned domain: {clean_domain}')
+                    clean_domain = domain.replace("https://", "").replace("http://", "")
+                    logger.debug(f"[Azure DevOps] Cleaned domain: {clean_domain}")
 
-                    parts = repo_name.split('/')
+                    parts = repo_name.split("/")
                     logger.debug(
-                        f'[Azure DevOps] Repository parts: {parts} (length: {len(parts)})'
+                        f"[Azure DevOps] Repository parts: {parts} (length: {len(parts)})"
                     )
 
                     if len(parts) >= 3:
                         org, project, repo = parts[0], parts[1], parts[2]
                         logger.info(
-                            f'[Azure DevOps] Parsed repository - org: {org}, project: {project}, repo: {repo}'
+                            f"[Azure DevOps] Parsed repository - org: {org}, project: {project}, repo: {repo}"
                         )
                         # URL-encode org, project, and repo to handle spaces and special characters
-                        org_encoded = quote(org, safe='')
-                        project_encoded = quote(project, safe='')
-                        repo_encoded = quote(repo, safe='')
+                        org_encoded = quote(org, safe="")
+                        project_encoded = quote(project, safe="")
+                        repo_encoded = quote(repo, safe="")
                         logger.debug(
-                            f'[Azure DevOps] URL-encoded parts - org: {org_encoded}, project: {project_encoded}, repo: {repo_encoded}'
+                            f"[Azure DevOps] URL-encoded parts - org: {org_encoded}, project: {project_encoded}, repo: {repo_encoded}"
                         )
                         # Use org name as username (it's ignored by Azure DevOps but required for git)
-                        remote_url = f'https://{org}:***@{clean_domain}/{org_encoded}/{project_encoded}/_git/{repo_encoded}'
+                        remote_url = f"https://{org}:***@{clean_domain}/{org_encoded}/{project_encoded}/_git/{repo_encoded}"
                         logger.info(
-                            f'[Azure DevOps] Constructed git URL (token masked): {remote_url}'
+                            f"[Azure DevOps] Constructed git URL (token masked): {remote_url}"
                         )
                         # Set the actual URL with token
-                        remote_url = f'https://{org}:{token_value}@{clean_domain}/{org_encoded}/{project_encoded}/_git/{repo_encoded}'
+                        remote_url = f"https://{org}:{token_value}@{clean_domain}/{org_encoded}/{project_encoded}/_git/{repo_encoded}"
                     else:
                         # Fallback if format is unexpected
                         logger.warning(
-                            f'[Azure DevOps] Unexpected repository format: {repo_name}. '
-                            f'Expected org/project/repo (3 parts), got {len(parts)} parts. '
-                            'Using fallback URL format.'
+                            f"[Azure DevOps] Unexpected repository format: {repo_name}. "
+                            f"Expected org/project/repo (3 parts), got {len(parts)} parts. "
+                            "Using fallback URL format."
                         )
                         remote_url = (
-                            f'https://user:{token_value}@{clean_domain}/{repo_name}.git'
+                            f"https://user:{token_value}@{clean_domain}/{repo_name}.git"
                         )
                         logger.warning(
-                            f'[Azure DevOps] Fallback URL constructed (token masked): '
-                            f'https://user:***@{clean_domain}/{repo_name}.git'
+                            f"[Azure DevOps] Fallback URL constructed (token masked): "
+                            f"https://user:***@{clean_domain}/{repo_name}.git"
                         )
                 else:
                     # GitHub, Forgejo
-                    remote_url = f'{protocol}://{token_value}@{domain}/{repo_name}.git'
+                    remote_url = f"{protocol}://{token_value}@{domain}/{repo_name}.git"
             else:
-                remote_url = f'{protocol}://{domain}/{repo_name}.git'
+                remote_url = f"{protocol}://{domain}/{repo_name}.git"
         else:
-            remote_url = f'{protocol}://{domain}/{repo_name}.git'
+            remote_url = f"{protocol}://{domain}/{repo_name}.git"
 
         return remote_url
+
+    async def check_repository_file_exists(
+        self,
+        repository: str,
+        file_path: str,
+        specified_provider: ProviderType | None = None,
+        branch: str | None = None,
+    ) -> bool:
+        """Check if a file exists in a repository.
+
+        Args:
+            repository: The full repository name (owner/repo)
+            file_path: The path to the file to check
+            specified_provider: Optional provider to use for the check
+            branch: Optional branch to check (defaults to repository's default branch)
+
+        Returns:
+            True if the file exists, False otherwise
+        """
+        if specified_provider:
+            try:
+                service = self.get_service(specified_provider)
+                if hasattr(service, "check_repository_file_exists"):
+                    return await service.check_repository_file_exists(
+                        repository, file_path, branch
+                    )
+            except Exception as e:
+                logger.warning(
+                    f"Failed to check file exists with provider {specified_provider}: {e}"
+                )
+                return False
+
+        for provider in self.provider_tokens:
+            try:
+                service = self.get_service(provider)
+                if hasattr(service, "check_repository_file_exists"):
+                    return await service.check_repository_file_exists(
+                        repository, file_path, branch
+                    )
+            except Exception as e:
+                logger.warning(
+                    f"Failed to check file exists with provider {provider}: {e}"
+                )
+                continue
+
+        return False

@@ -2,7 +2,6 @@ import React from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router";
 import { useCreateConversation } from "#/hooks/mutation/use-create-conversation";
-// Removed useRepositoryBranches import - GitBranchDropdown manages its own data
 import { useIsCreatingConversation } from "#/hooks/use-is-creating-conversation";
 import { Branch, GitRepository } from "#/types/git";
 import { BrandButton } from "../settings/brand-button";

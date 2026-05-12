@@ -71,14 +71,14 @@ export function OpenRepositoryModal({
     setSelectedBranch(branch);
   }, []);
 
-  const handleLaunch = () => {
+  const handleLaunch = useCallback(() => {
     if (!selectedRepository || !selectedBranch) return;
 
     onLaunch(selectedRepository, selectedBranch);
     setSelectedRepository(null);
     setSelectedBranch(null);
     onClose();
-  };
+  }, [selectedRepository, selectedBranch, onLaunch, onClose]);
 
   const handleClose = () => {
     setSelectedProvider(null);

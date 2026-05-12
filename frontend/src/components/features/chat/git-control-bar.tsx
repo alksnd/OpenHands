@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { useTranslation } from "react-i18next";
 import { useParams } from "react-router";
 import { GitControlBarRepoButton } from "./git-control-bar-repo-button";
@@ -11,12 +11,15 @@ import { useTaskPolling } from "#/hooks/query/use-task-polling";
 import { useUnifiedWebSocketStatus } from "#/hooks/use-unified-websocket-status";
 import { useSendMessage } from "#/hooks/use-send-message";
 import { useUpdateConversationRepository } from "#/hooks/mutation/use-update-conversation-repository";
+import { useRepositoryOnboardingFiles } from "#/hooks/query/use-repository-onboarding-files";
 import { Provider } from "#/types/settings";
 import { Branch, GitRepository } from "#/types/git";
 import { I18nKey } from "#/i18n/declaration";
 import { GitControlBarTooltipWrapper } from "./git-control-bar-tooltip-wrapper";
 import { OpenRepositoryModal } from "./open-repository-modal";
+import { OnboardingPluginModal } from "#/components/features/home/onboarding-plugin-modal";
 import { displayErrorToast } from "#/utils/custom-toast-handlers";
+import { needsOnboarding } from "#/utils/onboarding-utils";
 import { useHomeStore } from "#/stores/home-store";
 import { useOptimisticUserMessageStore } from "#/stores/optimistic-user-message-store";
 
@@ -24,10 +27,39 @@ interface GitControlBarProps {
   onSuggestionsClick: (value: string) => void;
 }
 
+// localStorage key for tracking onboarding modal dismissal per conversation
+const ONBOARDING_MODAL_SHOWN_KEY_PREFIX = "onboarding-modal-shown-";
+
+function getOnboardingModalShownKey(conversationId: string): string {
+  return `${ONBOARDING_MODAL_SHOWN_KEY_PREFIX}${conversationId}`;
+}
+
+function wasOnboardingModalShown(conversationId: string | undefined): boolean {
+  if (!conversationId) return false;
+  try {
+    return (
+      localStorage.getItem(getOnboardingModalShownKey(conversationId)) ===
+      "true"
+    );
+  } catch {
+    return false;
+  }
+}
+
+function markOnboardingModalShown(conversationId: string | undefined): void {
+  if (!conversationId) return;
+  try {
+    localStorage.setItem(getOnboardingModalShownKey(conversationId), "true");
+  } catch {
+    // Ignore localStorage errors
+  }
+}
+
 export function GitControlBar({ onSuggestionsClick }: GitControlBarProps) {
   const { t } = useTranslation();
   const { conversationId } = useParams<{ conversationId: string }>();
   const [isOpenRepoModalOpen, setIsOpenRepoModalOpen] = useState(false);
+  const [showOnboardingModal, setShowOnboardingModal] = useState(false);
   const { addRecentRepository } = useHomeStore();
   const { setOptimisticUserMessage } = useOptimisticUserMessageStore();
 
@@ -58,6 +90,74 @@ export function GitControlBar({ onSuggestionsClick }: GitControlBarProps) {
 
   // Enable buttons only when conversation exists and WS is connected
   const isConversationReady = !!conversation && webSocketStatus === "OPEN";
+
+  // Check onboarding files for the current repository
+  const { data: onboardingFiles } = useRepositoryOnboardingFiles(
+    selectedRepository,
+    gitProvider,
+    selectedBranch,
+    hasRepository,
+  );
+
+  // Show onboarding modal once per conversation when repo needs onboarding
+  // This handles both:
+  // 1. Conversation loaded with a repo that needs onboarding
+  // 2. User connected a new repo via OpenRepositoryModal
+  // The modal only shows once per conversation (persisted in localStorage)
+  // We wait until isConversationReady (WebSocket connected) to ensure:
+  // - The conversation state is stable (no double-firing)
+  // - "Load Plugin" can send a message immediately
+  useEffect(() => {
+    // Must have a valid conversationId to track in localStorage
+    if (!conversationId) {
+      return;
+    }
+
+    // Wait until the conversation is ready (WebSocket connected)
+    // This ensures stable state and that "Load Plugin" works immediately
+    if (!isConversationReady) {
+      return;
+    }
+
+    // Check localStorage synchronously - prevents race conditions
+    if (wasOnboardingModalShown(conversationId)) {
+      return;
+    }
+
+    if (hasRepository && needsOnboarding(onboardingFiles)) {
+      // Mark as shown BEFORE updating state to prevent double-firing
+      markOnboardingModalShown(conversationId);
+      setShowOnboardingModal(true);
+    }
+  }, [hasRepository, onboardingFiles, conversationId, isConversationReady]);
+
+  const handleOnboardingDismiss = useCallback(() => {
+    setShowOnboardingModal(false);
+  }, []);
+
+  const handleOnboardingLoadPlugin = useCallback(() => {
+    setShowOnboardingModal(false);
+
+    // Check WebSocket is connected before sending
+    if (webSocketStatusRef.current !== "OPEN") {
+      displayErrorToast(t(I18nKey.CHAT_INTERFACE$DISCONNECTED));
+      return;
+    }
+
+    // Send message to agent to add the onboarding plugin and run setup-openhands
+    const onboardingPrompt = `/add-skill https://github.com/OpenHands/extensions/tree/main/plugins/onboarding
+
+After adding the skill, run \`setup-openhands\` to configure this repository for OpenHands.`;
+
+    setOptimisticUserMessage(onboardingPrompt);
+    sendRef.current({
+      action: "message",
+      args: {
+        content: onboardingPrompt,
+        timestamp: new Date().toISOString(),
+      },
+    });
+  }, [t, setOptimisticUserMessage]);
 
   const handleLaunchRepository = (
     repository: GitRepository,
@@ -181,6 +281,13 @@ export function GitControlBar({ onSuggestionsClick }: GitControlBarProps) {
         onLaunch={handleLaunchRepository}
         defaultProvider={gitProvider}
       />
+
+      {showOnboardingModal && (
+        <OnboardingPluginModal
+          onLoadPlugin={handleOnboardingLoadPlugin}
+          onDismiss={handleOnboardingDismiss}
+        />
+      )}
     </div>
   );
 }
