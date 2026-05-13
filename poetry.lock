@@ -4057,6 +4057,24 @@ files = [
 ]
 
 [[package]]
+name = "joserfc"
+version = "1.6.5"
+description = "The ultimate Python library for JOSE RFCs, including JWS, JWE, JWK, JWA, JWT"
+optional = false
+python-versions = ">=3.9"
+groups = ["main"]
+files = [
+    {file = "joserfc-1.6.5-py3-none-any.whl", hash = "sha256:e9878a0f8243fe7b95e11fdda81374ca9f7a689e302751579d3dfdeec559675e"},
+    {file = "joserfc-1.6.5.tar.gz", hash = "sha256:1482a7db78fb4602e44ed89e51b599d052e091288c7c532c5b694e20149dec48"},
+]
+
+[package.dependencies]
+cryptography = ">=45.0.1"
+
+[package.extras]
+drafts = ["pycryptodome"]
+
+[[package]]
 name = "json-repair"
 version = "0.58.7"
 description = "A package to repair broken json strings"
@@ -6169,14 +6187,14 @@ llama = ["llama-index (>=0.12.29,<0.13.0)", "llama-index-core (>=0.12.29,<0.13.0
 
 [[package]]
 name = "openhands-agent-server"
-version = "1.21.1"
+version = "1.22.0"
 description = "OpenHands Agent Server - REST/WebSocket interface for OpenHands AI Agent"
 optional = false
 python-versions = ">=3.12"
 groups = ["main"]
 files = [
-    {file = "openhands_agent_server-1.21.1-py3-none-any.whl", hash = "sha256:08e315fef9996215767f04b44ebb48a12553213af87cc1fa79a06ce8e9c0b108"},
-    {file = "openhands_agent_server-1.21.1.tar.gz", hash = "sha256:7e3957e3889bc4e63378a61a3b8e5afb8882261ad7c3b07307b0c0bab473ce81"},
+    {file = "openhands_agent_server-1.22.0-py3-none-any.whl", hash = "sha256:182b2c74028f120c58353ff5af4ab0e14124a3287581bf07ab3f56c6302cb406"},
+    {file = "openhands_agent_server-1.22.0.tar.gz", hash = "sha256:e0d9129c5db84f8807a184b47978372ab002fa1a7dfdb912b74d367c0832a9f2"},
 ]
 
 [package.dependencies]
@@ -6193,14 +6211,14 @@ wsproto = ">=1.2.0"
 
 [[package]]
 name = "openhands-sdk"
-version = "1.21.1"
+version = "1.22.0"
 description = "OpenHands SDK - Core functionality for building AI agents"
 optional = false
 python-versions = ">=3.12"
 groups = ["main"]
 files = [
-    {file = "openhands_sdk-1.21.1-py3-none-any.whl", hash = "sha256:028660d3b92f7379c7fc8e07b546ca710506cee2c1925557126958b3f07dd2f2"},
-    {file = "openhands_sdk-1.21.1.tar.gz", hash = "sha256:ec3097ca02bd565175f9a414a6791b2c5b88f48ae5f42ee44cb9e619d8b489fa"},
+    {file = "openhands_sdk-1.22.0-py3-none-any.whl", hash = "sha256:976999487a2ed84a46dc13652db153aae722771841d7103c272b2e5e0dc5040d"},
+    {file = "openhands_sdk-1.22.0.tar.gz", hash = "sha256:532088c0600e015158e1d824be557664b8001674b6ce726585307017050e8d4d"},
 ]
 
 [package.dependencies]
@@ -6210,6 +6228,7 @@ fakeredis = {version = ">=2.32.1", extras = ["lua"]}
 fastmcp = ">=3.0.0"
 filelock = ">=3.20.1"
 httpx = {version = ">=0.27.0", extras = ["socks"]}
+joserfc = ">=1.0.0"
 litellm = ">=1.83.7"
 lmnr = ">=0.7.47"
 pillow = ">=12.1.1"
@@ -6224,14 +6243,14 @@ boto3 = ["boto3 (>=1.35.0)"]
 
 [[package]]
 name = "openhands-tools"
-version = "1.21.1"
+version = "1.22.0"
 description = "OpenHands Tools - Runtime tools for AI agents"
 optional = false
 python-versions = ">=3.12"
 groups = ["main"]
 files = [
-    {file = "openhands_tools-1.21.1-py3-none-any.whl", hash = "sha256:d606b9aaf8315308ce10bef8a614e7f42ae1eef6f1ecf553d599f6feebf0236d"},
-    {file = "openhands_tools-1.21.1.tar.gz", hash = "sha256:046c6d032f738f3f285dd82f8b942483e95a71aa154834112d366cdb1bdc3265"},
+    {file = "openhands_tools-1.22.0-py3-none-any.whl", hash = "sha256:eb05d8b9bb8f544dc99596f9d0a5ba79e12859a25e5f5ee9e6e9729952591a93"},
+    {file = "openhands_tools-1.22.0.tar.gz", hash = "sha256:21c576f6a8fae980c7b91f43886ca972521fbb402265758db44e55b15f073031"},
 ]
 
 [package.dependencies]
@@ -14536,4 +14555,4 @@ cffi = ["cffi (>=1.17,<2.0) ; platform_python_implementation != \"PyPy\" and pyt
 [metadata]
 lock-version = "2.1"
 python-versions = "^3.12,<3.14"
-content-hash = "1f404c19047ed3ce602b63fabf2742bddaed66a50d3820ded2a2c072ab7c275e"
+content-hash = "5cc5a123aabc2c5d5f3fac08345d125f68b145d3b72f5f8de0b41e9bb8caaaf5"
