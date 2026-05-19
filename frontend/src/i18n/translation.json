@@ -12018,6 +12018,23 @@
     "uk": "Порушення політики щодо вмісту. Вивід було заблоковано політикою фільтрації вмісту.",
     "ca": "Infracció de la política de contingut. La sortida ha estat bloquejada per la política de filtratge de contingut."
   },
+  "STATUS$ERROR_LLM_MODEL_CONFIGURATION": {
+    "en": "Model configuration error: the model name could not be resolved to a provider. Please use the format \"provider/model\" (e.g. \"deepseek/deepseek-chat\"). Check the LLM configuration docs at https://docs.all-hands.dev/openhands/usage/llms/llms for supported models.",
+    "zh-CN": "模型配置错误：无法将模型名称解析为提供商。请使用 \"provider/model\" 格式（例如 \"deepseek/deepseek-chat\"）。请查阅 LLM 配置文档：https://docs.all-hands.dev/openhands/usage/llms/llms",
+    "zh-TW": "模型配置錯誤：無法將模型名稱解析為提供商。請使用 \"provider/model\" 格式（例如 \"deepseek/deepseek-chat\"）。請查閱 LLM 配置文件：https://docs.all-hands.dev/openhands/usage/llms/llms",
+    "ko-KR": "모델 구성 오류: 모델 이름을 제공자로 해석할 수 없습니다. \"provider/model\" 형식(예: \"deepseek/deepseek-chat\")을 사용해주세요. LLM 설정 문서를 확인하세요: https://docs.all-hands.dev/openhands/usage/llms/llms",
+    "ja": "モデル設定エラー：モデル名をプロバイダーに解決できませんでした。「provider/model」形式（例：「deepseek/deepseek-chat」）を使用してください。LLM設定ドキュメントを確認してください：https://docs.all-hands.dev/openhands/usage/llms/llms",
+    "de": "Modellkonfigurationsfehler: Der Modellname konnte keinem Anbieter zugeordnet werden. Bitte verwenden Sie das Format \"provider/model\" (z.B. \"deepseek/deepseek-chat\"). Überprüfen Sie die LLM-Konfigurationsdokumentation: https://docs.all-hands.dev/openhands/usage/llms/llms",
+    "fr": "Erreur de configuration du modèle : le nom du modèle n'a pas pu être résolu en fournisseur. Veuillez utiliser le format \"provider/model\" (ex : \"deepseek/deepseek-chat\"). Consultez la documentation de configuration LLM : https://docs.all-hands.dev/openhands/usage/llms/llms",
+    "es": "Error de configuración del modelo: no se pudo resolver el nombre del modelo a un proveedor. Use el formato \"provider/model\" (ej: \"deepseek/deepseek-chat\"). Consulte la documentación de configuración LLM: https://docs.all-hands.dev/openhands/usage/llms/llms",
+    "pt": "Erro de configuração do modelo: o nome do modelo não pôde ser resolvido para um provedor. Use o formato \"provider/model\" (ex: \"deepseek/deepseek-chat\"). Consulte a documentação de configuração LLM: https://docs.all-hands.dev/openhands/usage/llms/llms",
+    "it": "Errore di configurazione del modello: il nome del modello non può essere risolto in un provider. Utilizzare il formato \"provider/model\" (es: \"deepseek/deepseek-chat\"). Consultare la documentazione di configurazione LLM: https://docs.all-hands.dev/openhands/usage/llms/llms",
+    "tr": "Model yapılandırma hatası: model adı bir sağlayıcıya çözümlenemedi. Lütfen \"provider/model\" biçimini kullanın (örn: \"deepseek/deepseek-chat\"). LLM yapılandırma belgelerini kontrol edin: https://docs.all-hands.dev/openhands/usage/llms/llms",
+    "no": "Modellkonfigurasjonsfeil: modellnavnet kunne ikke løses til en leverandør. Bruk formatet \"provider/model\" (f.eks. \"deepseek/deepseek-chat\"). Sjekk LLM-konfigurasjonsdokumentasjonen: https://docs.all-hands.dev/openhands/usage/llms/llms",
+    "ar": "خطأ في تكوين النموذج: تعذر تحديد مزود النموذج. يرجى استخدام التنسيق \"provider/model\" (مثل: \"deepseek/deepseek-chat\"). راجع وثائق تكوين LLM: https://docs.all-hands.dev/openhands/usage/llms/llms",
+    "uk": "Помилка конфігурації моделі: не вдалося визначити провайдера за назвою моделі. Використовуйте формат \"provider/model\" (напр. \"deepseek/deepseek-chat\"). Перегляньте документацію з налаштування LLM: https://docs.all-hands.dev/openhands/usage/llms/llms",
+    "ca": "Error de configuració del model: no s'ha pogut resoldre el nom del model a un proveïdor. Utilitzeu el format \"provider/model\" (p. ex. \"deepseek/deepseek-chat\"). Consulteu la documentació de configuració LLM: https://docs.all-hands.dev/openhands/usage/llms/llms"
+  },
   "STATUS$ERROR": {
     "en": "An error occurred. Please try again.",
     "zh-CN": "发生错误，请重试",

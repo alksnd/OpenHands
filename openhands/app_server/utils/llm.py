@@ -21,6 +21,9 @@ from openhands.sdk.llm.utils.verified_models import (  # noqa: E402
     VERIFIED_ANTHROPIC_MODELS as _SDK_ANTHROPIC,
 )
 from openhands.sdk.llm.utils.verified_models import (
+    VERIFIED_DEEPSEEK_MODELS as _SDK_DEEPSEEK,
+)
+from openhands.sdk.llm.utils.verified_models import (
     VERIFIED_MISTRAL_MODELS as _SDK_MISTRAL,
 )
 from openhands.sdk.llm.utils.verified_models import (
@@ -63,6 +66,7 @@ VERIFIED_PROVIDERS: list[str] = list(_SDK_VERIFIED_MODELS.keys())
 
 _BARE_OPENAI_MODELS: set[str] = set(_SDK_OPENAI)
 _BARE_ANTHROPIC_MODELS: set[str] = set(_SDK_ANTHROPIC)
+_BARE_DEEPSEEK_MODELS: set[str] = set(_SDK_DEEPSEEK)
 _BARE_MISTRAL_MODELS: set[str] = set(_SDK_MISTRAL)
 
 DEFAULT_OPENHANDS_MODEL = 'openhands/claude-opus-4-5-20251101'
@@ -241,6 +245,8 @@ def _assign_provider(model: str) -> str:
         return f'openai/{model}'
     if model in _BARE_ANTHROPIC_MODELS:
         return f'anthropic/{model}'
+    if model in _BARE_DEEPSEEK_MODELS:
+        return f'deepseek/{model}'
     if model in _BARE_MISTRAL_MODELS:
         return f'mistral/{model}'
 

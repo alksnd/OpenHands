@@ -38,6 +38,9 @@ export const DOCUMENTATION_URL = {
     ORGANIZATION_AND_USER_MICROAGENTS:
       "https://docs.all-hands.dev/usage/prompting/microagents-org",
   },
+  LLM: {
+    CONFIGURATION: "https://docs.all-hands.dev/openhands/usage/llms/llms",
+  },
 };
 
 export const PRODUCT_URL = {

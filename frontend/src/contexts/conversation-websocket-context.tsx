@@ -45,7 +45,11 @@ import type {
 import EventService from "#/api/event-service/event-service.api";
 import PendingMessageService from "#/api/pending-message-service/pending-message-service.api";
 import { useConversationStore } from "#/stores/conversation-store";
-import { isBudgetOrCreditError, trackError } from "#/utils/error-handler";
+import {
+  isBudgetOrCreditError,
+  isModelConfigurationError,
+  trackError,
+} from "#/utils/error-handler";
 import { useReadConversationFile } from "#/hooks/mutation/use-read-conversation-file";
 import useMetricsStore from "#/stores/metrics-store";
 import { I18nKey } from "#/i18n/declaration";
@@ -396,6 +400,8 @@ export function ConversationWebSocketProvider({
             });
             if (isBudgetOrCreditError(errorEvent.detail)) {
               setErrorMessage(I18nKey.STATUS$ERROR_LLM_OUT_OF_CREDITS);
+            } else if (isModelConfigurationError(errorEvent.detail)) {
+              setErrorMessage(I18nKey.STATUS$ERROR_LLM_MODEL_CONFIGURATION);
             } else {
               setErrorMessage(errorEvent.detail);
             }
@@ -417,6 +423,8 @@ export function ConversationWebSocketProvider({
             // Use friendly i18n message for budget/credit errors instead of raw error
             if (isBudgetOrCreditError(event.error)) {
               setErrorMessage(I18nKey.STATUS$ERROR_LLM_OUT_OF_CREDITS);
+            } else if (isModelConfigurationError(event.error)) {
+              setErrorMessage(I18nKey.STATUS$ERROR_LLM_MODEL_CONFIGURATION);
             } else {
               setErrorMessage(event.error);
             }
@@ -551,6 +559,8 @@ export function ConversationWebSocketProvider({
             });
             if (isBudgetOrCreditError(errorEvent.detail)) {
               setErrorMessage(I18nKey.STATUS$ERROR_LLM_OUT_OF_CREDITS);
+            } else if (isModelConfigurationError(errorEvent.detail)) {
+              setErrorMessage(I18nKey.STATUS$ERROR_LLM_MODEL_CONFIGURATION);
             } else {
               setErrorMessage(errorEvent.detail);
             }
@@ -572,6 +582,8 @@ export function ConversationWebSocketProvider({
             // Use friendly i18n message for budget/credit errors instead of raw error
             if (isBudgetOrCreditError(event.error)) {
               setErrorMessage(I18nKey.STATUS$ERROR_LLM_OUT_OF_CREDITS);
+            } else if (isModelConfigurationError(event.error)) {
+              setErrorMessage(I18nKey.STATUS$ERROR_LLM_MODEL_CONFIGURATION);
             } else {
               setErrorMessage(event.error);
             }
