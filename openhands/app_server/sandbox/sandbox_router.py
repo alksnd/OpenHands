@@ -75,9 +75,12 @@ async def batch_get_sandboxes(
 @router.post('')
 async def start_sandbox(
     sandbox_spec_id: str | None = None,
+    auto_pause_existing: bool = True,
     sandbox_service: SandboxService = sandbox_service_dependency,
 ) -> SandboxInfo:
-    info = await sandbox_service.start_sandbox(sandbox_spec_id)
+    info = await sandbox_service.start_sandbox(
+        sandbox_spec_id=sandbox_spec_id, auto_pause_existing=auto_pause_existing
+    )
     return info
 
 
@@ -95,10 +98,13 @@ async def pause_sandbox(
 @router.post('/{sandbox_id}/resume', responses={404: {'description': 'Item not found'}})
 async def resume_sandbox(
     sandbox_id: str,
+    auto_pause_existing: bool = True,
     user_context: UserContext = user_context_dependency,
     sandbox_service: SandboxService = sandbox_service_dependency,
 ) -> Success:
-    exists = await sandbox_service.resume_sandbox(sandbox_id)
+    exists = await sandbox_service.resume_sandbox(
+        sandbox_id=sandbox_id, auto_pause_existing=auto_pause_existing
+    )
     if not exists:
         raise HTTPException(status.HTTP_404_NOT_FOUND)
 

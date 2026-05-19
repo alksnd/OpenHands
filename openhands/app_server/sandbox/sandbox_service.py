@@ -5,7 +5,7 @@ from abc import ABC, abstractmethod
 
 import httpx
 
-from openhands.app_server.errors import SandboxError
+from openhands.app_server.errors import MaxSandboxLimitReachedError, SandboxError
 from openhands.app_server.sandbox.sandbox_models import (
     AGENT_SERVER,
     SandboxInfo,
@@ -28,6 +28,8 @@ ALLOW_CORS_ORIGINS_VARIABLE = 'OH_ALLOW_CORS_ORIGINS_0'
 
 class SandboxService(ABC):
     """Service for accessing sandboxes in which conversations may be run."""
+
+    max_num_sandboxes: int
 
     @abstractmethod
     async def search_sandboxes(
@@ -58,7 +60,10 @@ class SandboxService(ABC):
 
     @abstractmethod
     async def start_sandbox(
-        self, sandbox_spec_id: str | None = None, sandbox_id: str | None = None
+        self,
+        sandbox_spec_id: str | None = None,
+        sandbox_id: str | None = None,
+        auto_pause_existing: bool = True,
     ) -> SandboxInfo:
         """Begin the process of starting a sandbox.
 
@@ -68,12 +73,110 @@ class SandboxService(ABC):
         """
 
     @abstractmethod
-    async def resume_sandbox(self, sandbox_id: str) -> bool:
+    async def resume_sandbox(
+        self, sandbox_id: str, auto_pause_existing: bool = True
+    ) -> bool:
         """Begin the process of resuming a sandbox.
 
         Return True if the sandbox exists and is being resumed or is already running.
         Return False if the sandbox did not exist.
         """
+
+    async def _get_active_sandbox_ids_oldest_first(self) -> list[str]:
+        running_sandboxes: list[SandboxInfo] = []
+        async for sandbox in page_iterator(self.search_sandboxes, limit=100):
+            if (
+                sandbox.status == SandboxStatus.RUNNING
+                or sandbox.status == SandboxStatus.STARTING
+            ):
+                running_sandboxes.append(sandbox)
+
+        running_sandboxes.sort(key=lambda x: x.created_at)
+        return [sandbox.id for sandbox in running_sandboxes]
+
+    async def batch_pause_sandboxes(
+        self, sandboxes_to_pause: list[str], num_to_pause: int
+    ) -> list[str]:
+        paused_sandbox_ids: list[str] = []
+        for sandbox_id in sandboxes_to_pause:
+            if len(paused_sandbox_ids) >= num_to_pause:
+                break
+
+            try:
+                success = await self.pause_sandbox(sandbox_id)
+                if success:
+                    paused_sandbox_ids.append(sandbox_id)
+            except Exception:
+                # Continue trying to pause other sandboxes even if one fails
+                pass
+
+        return paused_sandbox_ids
+
+    async def validate_sandbox_limit(
+        self, sandbox_id: str | None = None, auto_pause_existing: bool = True
+    ) -> None:
+        if auto_pause_existing:
+            return
+
+        check_limit_for_resume = False
+        if sandbox_id:
+            sandbox_info = await self.get_sandbox(sandbox_id)
+            check_limit_for_resume = (not sandbox_info) or (
+                sandbox_info.status == SandboxStatus.PAUSED
+            )
+
+        if (not sandbox_id) or check_limit_for_resume:
+            running_sandboxes = await self._get_active_sandbox_ids_oldest_first()
+            num_running = len(running_sandboxes)
+
+            if num_running >= self.max_num_sandboxes:
+                raise MaxSandboxLimitReachedError(
+                    detail=(
+                        'You have reached the maximum number of running sandboxes '
+                        f'(current={num_running}, limit={self.max_num_sandboxes}). '
+                        'Stop or pause an existing sandbox and retry, or call again with '
+                        'auto_pause_existing=true to allow automatically pausing older sandboxes/conversations.'
+                    )
+                )
+
+    async def enforce_max_num_sandboxes_limit(
+        self, auto_pause_existing: bool
+    ) -> list[str]:
+        """If auto_pause_existing, pause the oldest sandboxes if there are more than max_num_sandboxes_to_keep_running running.
+        In a multi user environment, this will pause sandboxes only for the current user. else return 429."""
+
+        running_sandboxes = await self._get_active_sandbox_ids_oldest_first()
+        num_running = len(running_sandboxes)
+
+        if num_running < self.max_num_sandboxes:
+            return []
+
+        if not auto_pause_existing:
+            raise MaxSandboxLimitReachedError(
+                detail=(
+                    'You have reached the maximum number of running sandboxes '
+                    f'(current={num_running}, limit={self.max_num_sandboxes}). '
+                    'Stop or pause an existing sandbox and retry, or call again with '
+                    'auto_pause_existing=true to allow automatically pausing older sandboxes/conversations.'
+                )
+            )
+
+        num_to_pause = len(running_sandboxes) - (self.max_num_sandboxes - 1)
+        # Stop the oldest sandboxes
+        paused_sandbox_ids = await self.batch_pause_sandboxes(
+            sandboxes_to_pause=running_sandboxes, num_to_pause=num_to_pause
+        )
+
+        if len(paused_sandbox_ids) < num_to_pause:
+            raise MaxSandboxLimitReachedError(
+                detail=(
+                    'Could not automatically pause enough older sandboxes to free up capacity '
+                    f'(Limit: {self.max_num_sandboxes}). '
+                    'Please manually stop or pause an existing sandbox and try again.'
+                )
+            )
+
+        return paused_sandbox_ids
 
     async def wait_for_sandbox_running(
         self,
@@ -184,49 +287,6 @@ class SandboxService(ABC):
 
         Return False if the sandbox did not exist.
         """
-
-    async def pause_old_sandboxes(self, max_num_sandboxes: int) -> list[str]:
-        """Pause the oldest sandboxes if there are more than max_num_sandboxes running.
-        In a multi user environment, this will pause sandboxes only for the current user.
-
-        Args:
-            max_num_sandboxes: Maximum number of sandboxes to keep running
-
-        Returns:
-            List of sandbox IDs that were paused
-        """
-        if max_num_sandboxes <= 0:
-            raise ValueError('max_num_sandboxes must be greater than 0')
-
-        # Get all running sandboxes (iterate through all pages)
-        running_sandboxes = []
-        async for sandbox in page_iterator(self.search_sandboxes, limit=100):
-            if sandbox.status == SandboxStatus.RUNNING:
-                running_sandboxes.append(sandbox)
-
-        # If we're within the limit, no cleanup needed
-        if len(running_sandboxes) <= max_num_sandboxes:
-            return []
-
-        # Sort by creation time (oldest first)
-        running_sandboxes.sort(key=lambda x: x.created_at)
-
-        # Determine how many to pause
-        num_to_pause = len(running_sandboxes) - max_num_sandboxes
-        sandboxes_to_pause = running_sandboxes[:num_to_pause]
-
-        # Stop the oldest sandboxes
-        paused_sandbox_ids = []
-        for sandbox in sandboxes_to_pause:
-            try:
-                success = await self.pause_sandbox(sandbox.id)
-                if success:
-                    paused_sandbox_ids.append(sandbox.id)
-            except Exception:
-                # Continue trying to pause other sandboxes even if one fails
-                pass
-
-        return paused_sandbox_ids
 
 
 class SandboxServiceInjector(DiscriminatedUnionMixin, Injector[SandboxService], ABC):

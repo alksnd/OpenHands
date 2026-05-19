@@ -60,6 +60,7 @@ from openhands.app_server.config import (
     depends_sandbox_spec_service,
     depends_user_context,
     get_app_conversation_service,
+    validate_sandbox_quota,
 )
 from openhands.app_server.sandbox.sandbox_models import (
     AGENT_SERVER,
@@ -356,7 +357,7 @@ async def batch_get_app_conversations(
     return app_conversations
 
 
-@router.post('')
+@router.post('', dependencies=[Depends(validate_sandbox_quota)])
 async def start_app_conversation(
     request: Request,
     start_request: AppConversationStartRequest,
@@ -866,16 +867,17 @@ async def delete_app_conversation(
     return Success()
 
 
-@router.post('/stream-start')
+@router.post('/stream-start', dependencies=[Depends(validate_sandbox_quota)])
 async def stream_app_conversation_start(
-    request: AppConversationStartRequest,
+    start_request: AppConversationStartRequest,
     user_context: UserContext = user_context_dependency,
 ) -> list[AppConversationStartTask]:
     """Start an app conversation start task and stream updates from it.
     Leaves the connection open until either the conversation starts or there was an error
     """
+
     response = StreamingResponse(
-        _stream_app_conversation_start(request, user_context),
+        _stream_app_conversation_start(start_request, user_context),
         media_type='application/json',
     )
     return response

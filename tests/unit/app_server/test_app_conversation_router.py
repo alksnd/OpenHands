@@ -25,6 +25,8 @@ from openhands.app_server.app_conversation.app_conversation_router import (
     search_app_conversations,
     switch_conversation_profile,
 )
+from openhands.app_server.config import validate_sandbox_quota
+from openhands.app_server.errors import MaxSandboxLimitReachedError
 from openhands.app_server.sandbox.sandbox_models import SandboxStatus
 from openhands.app_server.settings.llm_profiles import LLMProfiles
 from openhands.app_server.settings.settings_models import Settings
@@ -232,6 +234,58 @@ class TestBatchGetAppConversations:
 
 
 @pytest.mark.asyncio
+class TestValidateSandboxQuota:
+    """Test suite for the sandbox quota dependency (Admission Control)."""
+
+    async def test_raises_429_when_limit_reached(self):
+        """Test that reaching the sandbox limit raises a 429 error."""
+        mock_start_request = MagicMock()
+        mock_start_request.auto_pause_existing = False
+        mock_start_request.sandbox_id = 'test-id'
+
+        mock_sandbox_service = AsyncMock()
+        mock_sandbox_service.validate_sandbox_limit.side_effect = (
+            MaxSandboxLimitReachedError(
+                detail='You have reached the maximum number of running sandboxes'
+            )
+        )
+
+        with pytest.raises(MaxSandboxLimitReachedError) as exc_info:
+            await validate_sandbox_quota(
+                start_request=mock_start_request,
+                sandbox_service=mock_sandbox_service,
+            )
+
+        assert exc_info.value.status_code == status.HTTP_429_TOO_MANY_REQUESTS
+        assert 'maximum number of running sandboxes' in exc_info.value.detail
+        mock_sandbox_service.validate_sandbox_limit.assert_called_once_with(
+            sandbox_id='test-id',
+            auto_pause_existing=False,
+        )
+
+    async def test_passes_when_under_limit(self):
+        """Test that validation passes cleanly when the limit is not reached."""
+        mock_start_request = MagicMock()
+        mock_start_request.auto_pause_existing = True
+        mock_start_request.sandbox_id = 'test-id'
+
+        mock_sandbox_service = AsyncMock()
+        mock_sandbox_service.validate_sandbox_limit.return_value = None
+
+        try:
+            await validate_sandbox_quota(
+                start_request=mock_start_request,
+                sandbox_service=mock_sandbox_service,
+            )
+        except Exception as e:
+            pytest.fail(f'validate_sandbox_quota raised an exception unexpectedly: {e}')
+
+        mock_sandbox_service.validate_sandbox_limit.assert_called_once_with(
+            sandbox_id='test-id',
+            auto_pause_existing=True,
+        )
+
+
 class TestSearchAppConversations:
     """Test suite for search_app_conversations endpoint."""
 
