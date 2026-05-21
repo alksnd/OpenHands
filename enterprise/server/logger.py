@@ -2,7 +2,7 @@ import json
 import logging
 import os
 import sys
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import TextIO
 
@@ -39,7 +39,7 @@ def custom_json_serializer(obj, **kwargs):
     if LOG_JSON_FOR_CONSOLE:
         # Format json output
         kwargs['indent'] = 2
-        obj = {'ts': datetime.now().isoformat(), **obj}
+        obj = {'ts': datetime.now(timezone.utc).isoformat(), **obj}
 
         # Format stack traces
         if isinstance(obj, dict):

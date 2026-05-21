@@ -1,7 +1,7 @@
 import asyncio
 import logging
 from collections import defaultdict
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from urllib.parse import urlparse
 
 from fastapi import Request
@@ -86,13 +86,13 @@ class InMemoryRateLimiter:
         self.sleep_seconds = sleep_seconds
 
     def _clean_old_requests(self, key: str) -> None:
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
         cutoff = now - timedelta(seconds=self.seconds)
         self.history[key] = [ts for ts in self.history[key] if ts > cutoff]
 
     async def __call__(self, request: Request) -> bool:
         key = request.client.host
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
 
         self._clean_old_requests(key)
 

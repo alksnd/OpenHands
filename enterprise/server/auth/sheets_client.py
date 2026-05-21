@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Optional, Tuple
 
 import gspread
@@ -42,7 +42,7 @@ class GoogleSheetsClient:
             return None
 
         usernames, timestamp = self._cache[cache_key]
-        if datetime.now() - timestamp > self._cache_ttl:
+        if datetime.now(timezone.utc) - timestamp > self._cache_ttl:
             logger.info('Cache expired, will fetch fresh data')
             return None
 
@@ -62,7 +62,7 @@ class GoogleSheetsClient:
             usernames: List of usernames to cache
         """
         cache_key = (spreadsheet_id, range_name)
-        self._cache[cache_key] = (usernames, datetime.now())
+        self._cache[cache_key] = (usernames, datetime.now(timezone.utc))
 
     def get_usernames(self, spreadsheet_id: str, range_name: str = 'A:A') -> List[str]:
         """Get list of usernames from specified Google Sheet.

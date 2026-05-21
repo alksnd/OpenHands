@@ -5,7 +5,7 @@ import re
 import sys
 import traceback
 import warnings
-from datetime import datetime
+from datetime import datetime, timezone
 from logging.handlers import TimedRotatingFileHandler
 from types import TracebackType
 from typing import Any, Literal, Mapping, MutableMapping, TextIO
@@ -475,7 +475,7 @@ class LlmFileHandler(logging.FileHandler):
         self.filename = filename
         self.message_counter = 1
         if DEBUG:
-            self.session = datetime.now().strftime('%y-%m-%d_%H-%M')
+            self.session = datetime.now(timezone.utc).strftime('%y-%m-%d_%H-%M')
         else:
             self.session = 'default'
         self.log_directory = os.path.join(LOG_DIR, 'llm', self.session)

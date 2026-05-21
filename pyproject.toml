@@ -304,10 +304,15 @@ ignore = [ "E501" ]
 skip-string-normalization = true
 
 [tool.ruff]
-lint.select = [ "D" ]
+lint.select = [ "D", "DTZ005" ]
 # ignore warnings for missing docstrings
 lint.ignore = [ "D1" ]
 lint.pydocstyle.convention = "google"
+
+[tool.ruff.lint.per-file-ignores]
+# Allow datetime.now() without tz in tests (not user-facing)
+"**/tests/**" = [ "DTZ005" ]
+"**/test_*" = [ "DTZ005" ]
 
 [tool.coverage.run]
 concurrency = [ "gevent" ]
