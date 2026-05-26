@@ -60,3 +60,17 @@ repos:
         always_run: true
         pass_filenames: false
         files: ^enterprise/
+
+  - repo: local
+    hooks:
+      - id: check-forbidden-imports
+        name: Check forbidden import contracts (import-linter)
+        # Scans cross-package deps; server.verified_models must not import
+        # openhands.app_server.config (see [tool.importlinter] in pyproject.toml).
+        # language: python lets pre-commit manage a venv with lint-imports installed;
+        # PYTHONPATH=enterprise makes bare "server.*" imports resolvable by grimp.
+        entry: bash -c 'PYTHONPATH=enterprise lint-imports --config enterprise/pyproject.toml'
+        language: python
+        additional_dependencies: ["import-linter>=2.1"]
+        pass_filenames: false
+        files: ^enterprise/(server|storage|integrations|sync)/.*\.py$

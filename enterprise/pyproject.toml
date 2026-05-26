@@ -53,6 +53,7 @@ pillow = "^12.1.1"
 [tool.poetry.group.dev.dependencies]
 ruff = "0.8.3"
 mypy = "1.13.0"
+import-linter = ">=2.1"
 pre-commit = "4.1.0"
 build = "*"
 types-requests = "^2.32.4.20250611"
@@ -96,3 +97,15 @@ asyncio_default_fixture_loop_scope = "function"
 [tool.coverage.run]
 relative_files = true
 omit = [ "tests/*" ]
+
+[tool.importlinter]
+# Both packages must be listed so grimp can trace cross-package imports.
+# Run via: PYTHONPATH=enterprise lint-imports (from the repo root)
+root_packages = [ "server", "integrations", "openhands" ]
+
+[[tool.importlinter.contracts]]
+name = "server.verified_models must not import openhands.app_server.config"
+type = "forbidden"
+# Apply to the whole subpackage so both the router and the service are covered.
+source_modules = [ "server.verified_models" ]
+forbidden_modules = [ "openhands.app_server.config" ]
