@@ -14,6 +14,7 @@ import {
   TaskTrackerObservation,
   GlobObservation,
   GrepObservation,
+  TaskObservation,
 } from "#/types/v1/core/base/observation";
 
 // File Editor Observations
@@ -289,6 +290,27 @@ const getGrepObservationContent = (
   return content;
 };
 
+const getTaskObservationContent = (
+  event: ObservationEvent<TaskObservation>,
+): string => {
+  const { observation } = event;
+  let content = `**Task ID:** ${observation.task_id}\n**Agent:** ${observation.subagent}\n**Status:** ${observation.status}`;
+
+  const textContent = observation.content
+    .filter((c) => c.type === "text")
+    .map((c) => c.text)
+    .join("\n");
+
+  if (textContent) {
+    content += `\n\n${textContent}`;
+  }
+
+  if (content.length > MAX_CONTENT_LENGTH) {
+    content = `${content.slice(0, MAX_CONTENT_LENGTH)}...(truncated)`;
+  }
+  return content;
+};
+
 export const getObservationContent = (event: ObservationEvent): string => {
   const observationType = event.observation.kind;
 
@@ -340,6 +362,11 @@ export const getObservationContent = (event: ObservationEvent): string => {
     case "GrepObservation":
       return getGrepObservationContent(
         event as ObservationEvent<GrepObservation>,
+      );
+
+    case "TaskObservation":
+      return getTaskObservationContent(
+        event as ObservationEvent<TaskObservation>,
       );
 
     default:

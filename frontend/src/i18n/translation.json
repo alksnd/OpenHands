@@ -12528,6 +12528,23 @@
     "uk": "Пошук файлів: <cmd>{{pattern}}</cmd>",
     "ca": "Cerca fitxers: <cmd>{{pattern}}</cmd>"
   },
+  "ACTION_MESSAGE$TASK": {
+    "en": "Sub-agent task: {{agent}}",
+    "ja": "サブエージェントタスク: {{agent}}",
+    "zh-CN": "子代理任务: {{agent}}",
+    "zh-TW": "子代理任務: {{agent}}",
+    "ko-KR": "하위 에이전트 작업: {{agent}}",
+    "no": "Underagent-oppgave: {{agent}}",
+    "it": "Attività sub-agente: {{agent}}",
+    "pt": "Tarefa do sub-agente: {{agent}}",
+    "es": "Tarea del sub-agente: {{agent}}",
+    "ar": "مهمة الوكيل الفرعي: {{agent}}",
+    "fr": "Tâche sous-agent: {{agent}}",
+    "tr": "Alt ajan görevi: {{agent}}",
+    "de": "Sub-Agent-Aufgabe: {{agent}}",
+    "uk": "Завдання підагента: {{agent}}",
+    "ca": "Tasca del subagent: {{agent}}"
+  },
   "OBSERVATION_MESSAGE$RUN": {
     "en": "Ran <cmd>{{command}}</cmd>",
     "zh-CN": "运行 <cmd>{{command}}</cmd>",
@@ -12714,6 +12731,23 @@
     "de": "In Dateien suchen: <cmd>{{pattern}}</cmd>",
     "uk": "Пошук у файлах: <cmd>{{pattern}}</cmd>",
     "ca": "Cerca als fitxers: <cmd>{{pattern}}</cmd>"
+  },
+  "OBSERVATION_MESSAGE$TASK": {
+    "en": "Sub-agent task completed",
+    "ja": "サブエージェントタスク完了",
+    "zh-CN": "子代理任务已完成",
+    "zh-TW": "子代理任務已完成",
+    "ko-KR": "하위 에이전트 작업 완료",
+    "no": "Underagent-oppgave fullført",
+    "it": "Attività sub-agente completata",
+    "pt": "Tarefa do sub-agente concluída",
+    "es": "Tarea del sub-agente completada",
+    "ar": "اكتملت مهمة الوكيل الفرعي",
+    "fr": "Tâche sous-agent terminée",
+    "tr": "Alt ajan görevi tamamlandı",
+    "de": "Sub-Agent-Aufgabe abgeschlossen",
+    "uk": "Завдання підагента завершено",
+    "ca": "Tasca del subagent completada"
   },
   "OBSERVATION_MESSAGE$TASK_TRACKING_PLAN": {
     "en": "Agent updated the plan",

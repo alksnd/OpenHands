@@ -145,4 +145,83 @@ describe("getEventContent", () => {
     expect(screen.getByText("Check repository status")).toBeInTheDocument();
     expect(screen.queryByText("$ git status")).not.toBeInTheDocument();
   });
+
+  describe("task events (TaskToolSet)", () => {
+    const taskActionEvent: ActionEvent = {
+      id: "action-task-1",
+      timestamp: new Date().toISOString(),
+      source: "agent",
+      thought: [{ type: "text", text: "I need to explore the codebase." }],
+      thinking_blocks: [],
+      action: {
+        kind: "TaskAction",
+        description: "Explore auth module",
+        prompt: "Find all authentication middleware files",
+        subagent_type: "code-explorer",
+        resume: null,
+      },
+      tool_name: "task",
+      tool_call_id: "tool-task-1",
+      tool_call: {
+        id: "tool-task-1",
+        type: "function",
+        function: {
+          name: "task",
+          arguments: '{"prompt":"Find all authentication middleware files"}',
+        },
+      },
+      llm_response_id: "response-task-1",
+      security_risk: SecurityRisk.LOW,
+    };
+
+    const taskObservationEvent: ObservationEvent = {
+      id: "obs-task-1",
+      timestamp: new Date().toISOString(),
+      source: "environment",
+      tool_name: "task",
+      tool_call_id: "tool-task-1",
+      action_id: "action-task-1",
+      observation: {
+        kind: "TaskObservation",
+        content: [{ type: "text", text: "Found 3 middleware files." }],
+        task_id: "task-abc123",
+        subagent: "code-explorer",
+        status: "completed",
+      },
+    };
+
+    it("shows task action title", () => {
+      const { title } = getEventContent(taskActionEvent);
+
+      render(<span>{title}</span>);
+      expect(
+        screen.getByText("ACTION_MESSAGE$TASK"),
+      ).toBeInTheDocument();
+    });
+
+    it("shows task action details with agent type and prompt", () => {
+      const { details } = getEventContent(taskActionEvent);
+
+      expect(details).toContain("**Agent:** code-explorer");
+      expect(details).toContain("**Prompt:** Find all authentication middleware files");
+    });
+
+    it("shows task observation title", () => {
+      const { title } = getEventContent(taskObservationEvent);
+
+      render(<span>{title}</span>);
+      expect(
+        screen.getByText("OBSERVATION_MESSAGE$TASK"),
+      ).toBeInTheDocument();
+    });
+
+    it("shows task observation details with task info", () => {
+      const { details } = getEventContent(taskObservationEvent);
+
+      expect(details).toContain("**Task ID:** task-abc123");
+      expect(details).toContain("**Agent:** code-explorer");
+      expect(details).toContain("**Status:** completed");
+      expect(details).toContain("Found 3 middleware files.");
+    });
+  });
 });

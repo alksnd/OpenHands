@@ -27,13 +27,15 @@ type ActionEventType =
   | `${ActionOnlyType}Action`
   | `${EventType}Action`
   | "GlobAction"
-  | "GrepAction";
+  | "GrepAction"
+  | "TaskAction";
 type ObservationEventType =
   | `${ObservationOnlyType}Observation`
   | `${EventType}Observation`
   | "TerminalObservation"
   | "GlobObservation"
-  | "GrepObservation";
+  | "GrepObservation"
+  | "TaskObservation";
 
 export interface ActionBase<T extends ActionEventType = ActionEventType> {
   kind: T;

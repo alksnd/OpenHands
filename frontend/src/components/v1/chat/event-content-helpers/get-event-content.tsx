@@ -13,6 +13,7 @@ import { getObservationContent } from "./get-observation-content";
 import { getACPToolCallContent } from "./get-acp-tool-call-content";
 import { TaskTrackingObservationContent } from "../task-tracking/task-tracking-observation-content";
 import { TaskTrackerObservation } from "#/types/v1/core/base/observation";
+import { TaskAction } from "#/types/v1/core/base/action";
 import { SkillReadyEvent, isSkillReadyEvent } from "./create-skill-ready-event";
 import i18n from "#/i18n";
 
@@ -131,6 +132,12 @@ const getActionEventTitle = (event: OpenHandsEvent): React.ReactNode => {
     case "BrowserCloseTabAction":
       actionKey = "ACTION_MESSAGE$BROWSE";
       break;
+    case "TaskAction":
+      actionKey = "ACTION_MESSAGE$TASK";
+      actionValues = {
+        agent: (event.action as TaskAction).subagent_type,
+      };
+      break;
     default:
       // For unknown actions, use the type name
       return String(actionType).replace("Action", "").toUpperCase();
@@ -222,6 +229,9 @@ const getObservationEventTitle = (
           ? trimText(event.observation.pattern, 50)
           : "",
       };
+      break;
+    case "TaskObservation":
+      observationKey = "OBSERVATION_MESSAGE$TASK";
       break;
     default:
       // For unknown observations, use the type name

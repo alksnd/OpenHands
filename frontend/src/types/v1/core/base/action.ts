@@ -270,6 +270,25 @@ export interface GrepAction extends ActionBase<"GrepAction"> {
   include: string | null;
 }
 
+export interface TaskAction extends ActionBase<"TaskAction"> {
+  /**
+   * A short description of the task
+   */
+  description: string | null;
+  /**
+   * The task for the agent to perform
+   */
+  prompt: string;
+  /**
+   * The type of specialized agent to use
+   */
+  subagent_type: string;
+  /**
+   * Task ID to resume from, if any
+   */
+  resume: string | null;
+}
+
 export type Action =
   | MCPToolAction
   | FinishAction
@@ -291,4 +310,5 @@ export type Action =
   | BrowserSwitchTabAction
   | BrowserCloseTabAction
   | GlobAction
-  | GrepAction;
+  | GrepAction
+  | TaskAction;
