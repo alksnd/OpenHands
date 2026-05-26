@@ -2,7 +2,10 @@
 // This file contains API methods for /api/v1/sandboxes endpoints.
 
 import { openHands } from "../open-hands-axios";
-import type { V1SandboxInfo } from "./sandbox-service.types";
+import type {
+  V1SandboxInfo,
+  V1WebHostStatusResponse,
+} from "./sandbox-service.types";
 
 export class SandboxService {
   /**
@@ -46,6 +49,20 @@ export class SandboxService {
     ids.forEach((id) => params.append("id", id));
     const { data } = await openHands.get<(V1SandboxInfo | null)[]>(
       `/api/v1/sandboxes?${params.toString()}`,
+    );
+    return data;
+  }
+
+  /**
+   * Check whether an exposed sandbox worker URL is serving a web app
+   */
+  static async getWebHostStatus(
+    sandboxId: string,
+    url: string,
+  ): Promise<V1WebHostStatusResponse> {
+    const { data } = await openHands.get<V1WebHostStatusResponse>(
+      `/api/v1/sandboxes/${sandboxId}/web-host-status`,
+      { params: { url } },
     );
     return data;
   }

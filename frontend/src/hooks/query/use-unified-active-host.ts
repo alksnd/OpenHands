@@ -1,6 +1,6 @@
 import { useQueries, useQuery } from "@tanstack/react-query";
-import axios from "axios";
 import React from "react";
+import { SandboxService } from "#/api/sandbox-service/sandbox-service.api";
 import { useConversationId } from "#/hooks/use-conversation-id";
 import { useRuntimeIsReady } from "#/hooks/use-runtime-is-ready";
 import { useActiveConversation } from "#/hooks/query/use-active-conversation";
@@ -49,16 +49,22 @@ export const useUnifiedActiveHost = () => {
   // Poll all hosts to find which one is active
   const apps = useQueries({
     queries: data.hosts.map((host) => ({
-      queryKey: [conversationId, "unified", "hosts", host],
+      queryKey: [conversationId, "unified", "hosts", sandboxId, host],
       queryFn: async () => {
+        if (!sandboxId) {
+          return "";
+        }
+
         try {
-          await axios.get(host);
-          return host;
+          const status = await SandboxService.getWebHostStatus(sandboxId, host);
+          return status.reachable ? host : "";
         } catch (e) {
           return "";
         }
       },
+      enabled: !!sandboxId,
       refetchInterval: 3000,
+      retry: false,
       meta: {
         disableToast: true,
       },

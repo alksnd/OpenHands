@@ -61,6 +61,12 @@ class SandboxPage(BaseModel):
     next_page_id: str | None = None
 
 
+class WebHostStatusResponse(BaseModel):
+    """Reachability status for a sandbox exposed web host."""
+
+    reachable: bool
+
+
 class SecretNameItem(BaseModel):
     """A secret's name and optional description (value NOT included)."""
 

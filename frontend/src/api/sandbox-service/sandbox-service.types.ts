@@ -22,3 +22,7 @@ export interface V1SandboxInfo {
   exposed_urls: V1ExposedUrl[] | null;
   created_at: string;
 }
+
+export interface V1WebHostStatusResponse {
+  reachable: boolean;
+}
