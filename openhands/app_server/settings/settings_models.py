@@ -39,6 +39,24 @@ from openhands.sdk.settings import (
 )
 
 
+def _secret_eq(a: str | SecretStr | None, b: str | SecretStr | None) -> bool:
+    """Compare two optional secret values by their plaintext content.
+
+    Avoids relying on ``SecretStr.__eq__`` which, while currently correct in
+    Pydantic v2, is an implementation detail.  Explicit comparison makes the
+    intent clear and is safe across ``None`` / ``str`` / ``SecretStr`` combinations.
+    ``LLM.api_key`` is typed ``str | SecretStr | None``, so the wider signature
+    is needed when comparing profile keys against live LLM keys.
+    """
+
+    def _extract(v: str | SecretStr | None) -> str | None:
+        if v is None:
+            return None
+        return v.get_secret_value() if isinstance(v, SecretStr) else v
+
+    return _extract(a) == _extract(b)
+
+
 def _coerce_value(value: Any) -> Any:
     """Unwrap SecretStr to plain values."""
     if isinstance(value, SecretStr):
@@ -166,20 +184,40 @@ class Settings(BaseModel):
     # ── Batch update ────────────────────────────────────────────────
 
     def reconcile_active_profile(self) -> None:
-        """Clear ``llm_profiles.active`` when the current LLM diverges from it.
+        """Clear ``llm_profiles.active`` when current settings diverge from the profile.
 
         The active profile is a pointer into ``llm_profiles.profiles``; if the
-        user edits ``agent_settings.llm`` directly (via the main settings
-        endpoint), the pointer becomes a lie. Rather than mutate the saved
-        profile, we drop the active marker so the frontend stops claiming a
-        profile is "in use" that no longer matches what's actually running.
+        user edits settings directly (via the main settings endpoint), the
+        pointer becomes a lie. Rather than mutate the saved profile, we drop
+        the active marker so the frontend stops claiming a profile is "in use"
+        that no longer matches what's actually running.
         """
         active = self.llm_profiles.active
         if active is None:
             return
-        saved = self.llm_profiles.get(active)
-        if saved is None or saved != self.agent_settings.llm:
+        profile = self.llm_profiles.get(active)
+        if profile is None:
             self.llm_profiles.active = None
+            return
+
+        if profile.agent_kind == 'openhands':
+            llm = self.agent_settings.llm
+            if (
+                profile.model != llm.model
+                or not _secret_eq(profile.api_key, llm.api_key)
+                or profile.base_url != llm.base_url
+            ):
+                self.llm_profiles.active = None
+        elif profile.agent_kind == 'acp':
+            if not isinstance(self.agent_settings, ACPAgentSettings):
+                self.llm_profiles.active = None
+            elif (
+                profile.acp_server != self.agent_settings.acp_server
+                or profile.acp_model != self.agent_settings.acp_model
+                or not _secret_eq(profile.api_key, self.agent_settings.llm.api_key)
+                or profile.base_url != self.agent_settings.llm.base_url
+            ):
+                self.llm_profiles.active = None
 
     def update(self, payload: dict[str, Any]) -> None:
         """Apply a batch of changes from a nested dict.
@@ -306,18 +344,56 @@ class Settings(BaseModel):
     # touches ``agent_settings.llm``.
 
     def switch_to_profile(self, name: str) -> None:
-        """Switch ``agent_settings.llm`` to a saved profile.
+        """Switch ``agent_settings`` to a saved profile.
+
+        For OpenHands profiles, updates only the ``llm`` field so sibling
+        settings (condenser, MCP config, etc.) are preserved.
+
+        For ACP profiles, updates ``acp_server``, ``acp_model``, and the
+        attribution LLM credentials.  If already in ACP mode, non-profile
+        deployment fields (``acp_command``, ``acp_args``, ``acp_env``) are
+        preserved; otherwise fresh :class:`ACPAgentSettings` are created at
+        defaults.
 
         Raises :class:`ProfileNotFoundError` if ``name`` isn't a saved profile.
         """
-        # Copy the LLM so post-activation fixups (e.g. resolving ``base_url``
-        # against the provider default) don't bleed back into the saved
-        # profile. ``model_copy(update={'llm': llm})`` is shallow, so the
-        # update value is shared with ``llm_profiles.profiles[name]``.
-        llm = self.llm_profiles.require(name)
-        self.agent_settings = self.agent_settings.model_copy(
-            update={'llm': llm.model_copy()}
-        )
+        from openhands.sdk.llm import LLM
+
+        profile = self.llm_profiles.require(name)
+
+        if profile.agent_kind == 'openhands':
+            llm = LLM(
+                model=profile.model, api_key=profile.api_key, base_url=profile.base_url
+            )
+            if isinstance(self.agent_settings, ACPAgentSettings):
+                self.agent_settings = OpenHandsAgentSettings(llm=llm)
+            else:
+                self.agent_settings = self.agent_settings.model_copy(
+                    update={'llm': llm}
+                )
+        else:
+            attribution_llm = LLM(
+                model=profile.acp_model or 'acp-managed',
+                api_key=profile.api_key,
+                base_url=profile.base_url,
+            )
+            if isinstance(self.agent_settings, ACPAgentSettings):
+                self.agent_settings = self.agent_settings.model_copy(
+                    update={
+                        'acp_server': profile.acp_server,
+                        'acp_model': profile.acp_model,
+                        'llm': attribution_llm,
+                    }
+                )
+            else:
+                # acp_server is guaranteed non-None by AgentProfile's validator
+                assert profile.acp_server is not None
+                self.agent_settings = ACPAgentSettings(
+                    acp_server=profile.acp_server,
+                    acp_model=profile.acp_model,
+                    llm=attribution_llm,
+                )
+
         self.llm_profiles.active = name
 
     def delete_profile(self, name: str) -> bool:

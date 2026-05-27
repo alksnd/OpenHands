@@ -16,6 +16,33 @@ interface ProfileRowProps {
   isActivating: boolean;
 }
 
+function ProfileSubtitle({ profile }: { profile: LlmProfileSummary }) {
+  if (profile.agent_kind === "acp") {
+    const subtitle = [profile.acp_server, profile.acp_model]
+      .filter(Boolean)
+      .join(" · ");
+    return (
+      <Typography.Text
+        className="text-sm text-gray-400 truncate min-w-0 max-w-full"
+        title={subtitle}
+      >
+        {subtitle}
+      </Typography.Text>
+    );
+  }
+  if (profile.model) {
+    return (
+      <Typography.Text
+        className="text-sm text-gray-400 truncate min-w-0 max-w-full"
+        title={profile.model}
+      >
+        {profile.model}
+      </Typography.Text>
+    );
+  }
+  return null;
+}
+
 export function ProfileRow({
   profile,
   isActive,
@@ -40,14 +67,7 @@ export function ProfileRow({
         >
           {profile.name}
         </Typography.Text>
-        {profile.model ? (
-          <Typography.Text
-            className="text-sm text-gray-400 truncate min-w-0 max-w-full"
-            title={profile.model}
-          >
-            {profile.model}
-          </Typography.Text>
-        ) : null}
+        <ProfileSubtitle profile={profile} />
         {isActive && (
           <Typography.Text
             className="text-xs bg-primary text-[#0D0F11] font-semibold rounded-full px-2 py-0.5 whitespace-nowrap self-start sm:self-auto"

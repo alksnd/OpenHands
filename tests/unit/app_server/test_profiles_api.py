@@ -22,7 +22,9 @@ from openhands.app_server.integrations.service_types import UserGitInfo
 from openhands.app_server.secrets.secrets_models import Secrets
 from openhands.app_server.secrets.secrets_store import SecretsStore
 from openhands.app_server.settings.file_settings_store import FileSettingsStore
-from openhands.app_server.settings.llm_profiles import MAX_PROFILES_PER_USER
+from openhands.app_server.settings.llm_profiles import (
+    MAX_PROFILES_PER_USER,
+)
 from openhands.app_server.settings.settings_models import Settings
 from openhands.app_server.settings.settings_router import _user_profile_locks
 from openhands.app_server.settings.settings_store import SettingsStore
@@ -33,9 +35,11 @@ from openhands.sdk.settings import OpenHandsAgentSettings
 
 @pytest.fixture(autouse=True)
 def _reset_profile_locks():
-    """Locks bind to the event loop that first awaited them; FastAPI TestClient
+    """Locks bind to the event loop that first awaited them; FastAPI TestClient.
+
     spins a fresh loop per test, so any stale Lock carried over from a previous
-    test would be attached to a dead loop. Clearing between tests fixes it."""
+    test would be attached to a dead loop. Clearing between tests fixes it.
+    """
     _user_profile_locks.clear()
     yield
     _user_profile_locks.clear()
@@ -197,9 +201,11 @@ async def test_list_profiles_returns_saved_profiles(test_client, settings_store)
 async def test_get_profile_returns_null_api_key_with_set_flag(
     test_client, settings_store
 ):
-    """``api_key`` is never echoed — the sibling ``api_key_set`` flag
+    """``api_key`` is never echoed — the sibling ``api_key_set`` flag.
+
     tells the UI whether a key is stored. Prevents the GET→edit→POST
-    round-trip from poisoning the stored key with a mask string."""
+    round-trip from poisoning the stored key with a mask string.
+    """
     settings = _base_settings()
     settings.llm_profiles.save(
         'p', LLM(model='openai/gpt-4o', api_key=SecretStr('sk-secret'))
@@ -303,7 +309,8 @@ async def test_save_profile_overwrites_existing(test_client, settings_store):
 async def test_save_overwrite_of_active_profile_clears_active(
     test_client, settings_store
 ):
-    """Overwriting the currently-active profile must drop ``active`` —
+    """Overwriting the currently-active profile must drop ``active`` —.
+
     otherwise the UI claims profile X is in use while ``agent_settings.llm``
     still points at the *old* X. Mirrors the safety net the main settings
     POST already enforces via ``reconcile_active_profile``.
@@ -334,7 +341,8 @@ async def test_save_overwrite_of_active_profile_clears_active(
 async def test_save_overwrite_of_inactive_profile_preserves_active(
     test_client, settings_store
 ):
-    """Overwriting a non-active profile must NOT touch the active marker —
+    """Overwriting a non-active profile must NOT touch the active marker —.
+
     only the active profile can diverge from agent_settings.llm.
     """
     settings = _base_settings()
@@ -370,9 +378,9 @@ async def test_edit_profile_round_trip_preserves_api_key(test_client, settings_s
     """Frontend GET→edit→POST flow must not corrupt the stored key.
 
     The GET response returns ``api_key: null``; when the frontend echoes
-    that back in the POST body, the server has to preserve the stored
-    key rather than overwrite with None. This is the concrete
-    mask-poisoning regression we fixed.
+    that back in the POST body (via the ``profile`` field), the server must
+    preserve the stored key rather than overwrite with None. This is the
+    concrete mask-poisoning regression we fixed.
     """
     await _seed(settings_store, _base_settings())
     test_client.post(
@@ -384,8 +392,10 @@ async def test_edit_profile_round_trip_preserves_api_key(test_client, settings_s
     fetched['config']['model'] = 'anthropic/claude-opus-4'  # user edits model
     assert fetched['config']['api_key'] is None  # GET returns null, not mask
 
+    # Round-trip via the ``profile`` field (supports the full AgentProfile shape
+    # including agent_kind, acp_server, acp_model returned by GET).
     resp = test_client.post(
-        '/api/v1/settings/profiles/p', json={'llm': fetched['config']}
+        '/api/v1/settings/profiles/p', json={'profile': fetched['config']}
     )
     assert resp.status_code == 201
 
@@ -397,7 +407,8 @@ async def test_edit_profile_round_trip_preserves_api_key(test_client, settings_s
 
 @pytest.mark.asyncio
 async def test_edit_profile_with_new_api_key_replaces_old(test_client, settings_store):
-    """Counter-test to the round-trip guard: when the user actually types
+    """Counter-test to the round-trip guard: when the user actually types.
+
     a new api_key in the edit form, the server must replace the stored
     one. Catches a logic regression where ``preserve`` runs
     unconditionally and swallows intentional updates.
@@ -557,7 +568,8 @@ async def test_activate_profile_applies_base_url_fixup(test_client, settings_sto
 async def test_activate_does_not_mutate_saved_profile_base_url(
     test_client, settings_store
 ):
-    """Activate must not bleed ``_post_merge_llm_fixups`` into the saved
+    """Activate must not bleed ``_post_merge_llm_fixups`` into the saved.
+
     profile. A shallow ``model_copy(update={'llm': llm})`` would share the
     LLM reference and propagate the fixup to ``llm_profiles[name]``.
 
@@ -754,8 +766,10 @@ async def test_save_profile_at_limit_can_still_overwrite(test_client, settings_s
 
 @pytest.mark.asyncio
 async def test_list_profiles_clears_orphan_active(test_client, settings_store):
-    """A persisted state with active pointing at a missing profile should
-    self-heal on the next load — ``active_profile`` is reported as None."""
+    """A persisted state with active pointing at a missing profile should.
+
+    self-heal on the next load — ``active_profile`` is reported as None.
+    """
     settings = _base_settings()
     settings.llm_profiles.save('real', LLM(model='openai/gpt-4o'))
     # Bypass the invariant validator to persist a corrupt state.
@@ -998,12 +1012,14 @@ async def test_cap_frees_after_delete(test_client, settings_store):
 
 @pytest.mark.asyncio
 async def test_concurrent_writes_all_persist(tmp_path: Path):
-    """Drive the handler under a single event loop with N truly concurrent
+    """Drive the handler under a single event loop with N truly concurrent.
+
     coroutines. Each handler loads → mutates → stores under the per-user
     lock; all N profiles must land without any getting clobbered.
 
     Bypasses ``TestClient`` (which spawns its own loop per request and makes
-    the module-level ``asyncio.Lock`` unreachable across calls)."""
+    the module-level ``asyncio.Lock`` unreachable across calls).
+    """
     import asyncio
 
     from openhands.app_server.settings.settings_router import (

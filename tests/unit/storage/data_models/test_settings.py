@@ -7,12 +7,16 @@ from fastmcp.mcp_config import MCPConfig
 from pydantic import SecretStr
 
 import openhands.app_server.settings.settings_models as settings_module
-from openhands.app_server.settings.llm_profiles import ProfileNotFoundError
-from openhands.app_server.settings.settings_models import Settings
+from openhands.app_server.settings.llm_profiles import (
+    AgentProfile,
+    ProfileNotFoundError,
+)
+from openhands.app_server.settings.settings_models import Settings, _secret_eq
 from openhands.app_server.settings.settings_router import LITE_LLM_API_URL
 from openhands.sdk.llm import LLM
 from openhands.sdk.settings import (
     AGENT_SETTINGS_SCHEMA_VERSION,
+    ACPAgentSettings,
     ConversationSettings,
     OpenHandsAgentSettings,
 )
@@ -388,9 +392,11 @@ def test_delete_missing_profile_returns_false():
 
 
 def test_update_ignores_llm_profiles_payload():
-    """``Settings.update`` refuses to mutate ``llm_profiles``; profile changes
+    """``Settings.update`` refuses to mutate ``llm_profiles``; profile changes.
+
     must go through the dedicated endpoints (which enforce name rules, the
-    count cap, and the per-user lock)."""
+    count cap, and the per-user lock).
+    """
     settings = Settings()
 
     settings.update(
@@ -538,3 +544,188 @@ def test_openhands_model_converts_to_litellm_proxy_internally():
     # Display representation should convert back to openhands/
     api_data = settings.get_agent_settings_display()
     assert api_data['llm']['model'] == 'openhands/claude-opus-4-5-20251101'
+
+
+# ── ACP profile switching ──────────────────────────────────────────
+
+
+def test_switch_to_acp_profile_from_openhands_mode():
+    """Activating an ACP profile from OpenHands mode switches agent kind."""
+    settings = Settings()
+    profile = AgentProfile(
+        agent_kind='acp',
+        acp_server='claude-code',
+        acp_model='claude-opus-4-7',
+        api_key=SecretStr('sk-ant'),
+    )
+    settings.llm_profiles.save('cc', profile)
+
+    settings.switch_to_profile('cc')
+
+    assert isinstance(settings.agent_settings, ACPAgentSettings)
+    assert settings.agent_settings.acp_server == 'claude-code'
+    assert settings.agent_settings.acp_model == 'claude-opus-4-7'
+    assert settings.agent_settings.llm.api_key.get_secret_value() == 'sk-ant'
+    assert settings.llm_profiles.active == 'cc'
+
+
+def test_switch_to_openhands_profile_from_acp_mode():
+    """Activating an OpenHands profile from ACP mode switches agent kind."""
+    settings = Settings(
+        agent_settings=ACPAgentSettings(
+            acp_server='claude-code', acp_model='claude-opus-4-7'
+        )
+    )
+    profile = AgentProfile(model='openai/gpt-4o', api_key=SecretStr('sk-1'))
+    settings.llm_profiles.save('gpt4', profile)
+
+    settings.switch_to_profile('gpt4')
+
+    assert isinstance(settings.agent_settings, OpenHandsAgentSettings)
+    assert settings.agent_settings.llm.model == 'openai/gpt-4o'
+    assert settings.llm_profiles.active == 'gpt4'
+
+
+def test_switch_to_acp_profile_preserves_deployment_fields():
+    """Switching between ACP profiles must keep acp_command/args/env overrides."""
+    acp = ACPAgentSettings(
+        acp_server='codex',
+        acp_model='gpt-4o',
+        acp_command=['custom-codex-bin'],
+    )
+    settings = Settings(agent_settings=acp)
+    profile = AgentProfile(
+        agent_kind='acp',
+        acp_server='claude-code',
+        acp_model='claude-opus-4-7',
+    )
+    settings.llm_profiles.save('cc', profile)
+
+    settings.switch_to_profile('cc')
+
+    assert settings.agent_settings.acp_server == 'claude-code'
+    assert settings.agent_settings.acp_model == 'claude-opus-4-7'
+    assert settings.agent_settings.acp_command == ['custom-codex-bin']
+
+
+# ── reconcile_active_profile with ACP ─────────────────────────────
+
+
+def test_reconcile_acp_profile_kept_when_settings_match():
+    settings = Settings(
+        agent_settings=ACPAgentSettings(
+            acp_server='claude-code', acp_model='claude-opus-4-7'
+        )
+    )
+    settings.llm_profiles.save(
+        'cc',
+        AgentProfile(
+            agent_kind='acp', acp_server='claude-code', acp_model='claude-opus-4-7'
+        ),
+    )
+    settings.llm_profiles.active = 'cc'
+
+    settings.reconcile_active_profile()
+
+    assert settings.llm_profiles.active == 'cc'
+
+
+def test_reconcile_acp_profile_cleared_when_server_diverges():
+    settings = Settings(
+        agent_settings=ACPAgentSettings(acp_server='codex', acp_model='gpt-4o')
+    )
+    settings.llm_profiles.save(
+        'cc',
+        AgentProfile(
+            agent_kind='acp', acp_server='claude-code', acp_model='claude-opus-4-7'
+        ),
+    )
+    settings.llm_profiles.active = 'cc'
+
+    settings.reconcile_active_profile()
+
+    assert settings.llm_profiles.active is None
+
+
+def test_reconcile_acp_profile_cleared_when_agent_kind_is_openhands():
+    """An ACP profile pointer must be dropped when the agent is in OpenHands mode."""
+    settings = Settings()  # defaults to OpenHandsAgentSettings
+    settings.llm_profiles.save(
+        'cc',
+        AgentProfile(
+            agent_kind='acp', acp_server='claude-code', acp_model='claude-opus-4-7'
+        ),
+    )
+    settings.llm_profiles.active = 'cc'
+
+    settings.reconcile_active_profile()
+
+    assert settings.llm_profiles.active is None
+
+
+def test_reconcile_acp_profile_cleared_when_api_key_diverges():
+    profile_key = SecretStr('sk-profile')
+    settings = Settings(
+        agent_settings=ACPAgentSettings(
+            acp_server='claude-code',
+            acp_model='claude-opus-4-7',
+            llm=LLM(model='claude-opus-4-7', api_key=SecretStr('sk-different')),
+        )
+    )
+    settings.llm_profiles.save(
+        'cc',
+        AgentProfile(
+            agent_kind='acp',
+            acp_server='claude-code',
+            acp_model='claude-opus-4-7',
+            api_key=profile_key,
+        ),
+    )
+    settings.llm_profiles.active = 'cc'
+
+    settings.reconcile_active_profile()
+
+    assert settings.llm_profiles.active is None
+
+
+# ── AgentProfile.from_acp_settings ────────────────────────────────
+
+
+def test_agent_profile_from_acp_settings():
+    acp = ACPAgentSettings(
+        acp_server='claude-code',
+        acp_model='claude-opus-4-7',
+        llm=LLM(
+            model='claude-opus-4-7',
+            api_key=SecretStr('sk-ant'),
+            base_url='https://proxy.example.com',
+        ),
+    )
+
+    p = AgentProfile.from_acp_settings(acp)
+
+    assert p.agent_kind == 'acp'
+    assert p.acp_server == 'claude-code'
+    assert p.acp_model == 'claude-opus-4-7'
+    assert p.api_key.get_secret_value() == 'sk-ant'
+    assert p.base_url == 'https://proxy.example.com'
+
+
+# ── _secret_eq helper ─────────────────────────────────────────────
+
+
+def test_secret_eq_both_none():
+    assert _secret_eq(None, None) is True
+
+
+def test_secret_eq_one_none():
+    assert _secret_eq(None, SecretStr('x')) is False
+    assert _secret_eq(SecretStr('x'), None) is False
+
+
+def test_secret_eq_matching_values():
+    assert _secret_eq(SecretStr('sk-abc'), SecretStr('sk-abc')) is True
+
+
+def test_secret_eq_different_values():
+    assert _secret_eq(SecretStr('sk-abc'), SecretStr('sk-xyz')) is False
