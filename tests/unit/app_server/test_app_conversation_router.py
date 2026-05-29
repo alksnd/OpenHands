@@ -4,6 +4,7 @@ This module tests the batch_get_app_conversations endpoint,
 focusing on UUID string parsing, validation, and error handling.
 """
 
+import io
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
@@ -22,12 +23,22 @@ from openhands.app_server.app_conversation.app_conversation_router import (
     AgentServerContext,
     batch_get_app_conversations,
     count_app_conversations,
+    read_conversation_file,
     search_app_conversations,
     switch_conversation_profile,
 )
-from openhands.app_server.sandbox.sandbox_models import SandboxStatus
+from openhands.app_server.sandbox.sandbox_models import (
+    AGENT_SERVER,
+    ExposedUrl,
+    SandboxInfo,
+    SandboxStatus,
+)
+from openhands.app_server.sandbox.sandbox_spec_models import SandboxSpecInfo
 from openhands.app_server.settings.llm_profiles import LLMProfiles
 from openhands.app_server.settings.settings_models import Settings
+from openhands.app_server.utils.docker_utils import (
+    replace_localhost_hostname_for_docker,
+)
 from openhands.sdk.llm import LLM
 from openhands.sdk.settings import OpenHandsAgentSettings
 
@@ -808,3 +819,132 @@ class TestSwitchConversationProfile:
                 sandbox_spec_service=MagicMock(),
                 httpx_client=client,
             )
+
+
+@pytest.mark.asyncio
+class TestReadConversationFile:
+    """Test suite for read_conversation_file endpoint."""
+
+    async def test_uses_default_sandbox_spec_when_original_is_missing(self):
+        """File reads keep working when an old sandbox spec record is missing."""
+        conversation_id = uuid4()
+        sandbox_id = str(uuid4())
+        sandbox_spec_id = str(uuid4())
+
+        mock_service = _make_mock_service(
+            get_conversation_return=_make_mock_app_conversation(
+                conversation_id=conversation_id,
+                sandbox_id=sandbox_id,
+            )
+        )
+
+        mock_sandbox_service = MagicMock()
+        mock_sandbox_service.get_sandbox = AsyncMock(
+            return_value=SandboxInfo(
+                id=sandbox_id,
+                created_by_user_id='test-user',
+                status=SandboxStatus.RUNNING,
+                sandbox_spec_id=sandbox_spec_id,
+                session_api_key='test-api-key',
+                exposed_urls=[
+                    ExposedUrl(
+                        name=AGENT_SERVER, url='http://localhost:8000', port=8000
+                    )
+                ],
+            )
+        )
+
+        default_sandbox_spec = SandboxSpecInfo(
+            id=str(uuid4()), command=None, working_dir='/workspace'
+        )
+        mock_sandbox_spec_service = MagicMock()
+        mock_sandbox_spec_service.get_sandbox_spec = AsyncMock(return_value=None)
+        mock_sandbox_spec_service.get_default_sandbox_spec = AsyncMock(
+            return_value=default_sandbox_spec
+        )
+
+        remote_workspace = MagicMock()
+        remote_workspace.file_download = AsyncMock(return_value=MagicMock(success=True))
+
+        with (
+            patch(
+                'openhands.app_server.app_conversation.app_conversation_router.AsyncRemoteWorkspace',
+                return_value=remote_workspace,
+            ) as remote_workspace_cls,
+            patch(
+                'openhands.app_server.app_conversation.app_conversation_router.tempfile.NamedTemporaryFile'
+            ) as named_tempfile,
+            patch(
+                'openhands.app_server.app_conversation.app_conversation_router.open',
+                return_value=io.BytesIO(b'plan body'),
+                create=True,
+            ),
+            patch(
+                'openhands.app_server.app_conversation.app_conversation_router.os.unlink'
+            ),
+        ):
+            named_tempfile.return_value.__enter__.return_value.name = '/tmp/test-plan'
+
+            result = await read_conversation_file(
+                conversation_id=conversation_id,
+                file_path='/workspace/project/PLAN.md',
+                app_conversation_service=mock_service,
+                sandbox_service=mock_sandbox_service,
+                sandbox_spec_service=mock_sandbox_spec_service,
+            )
+
+        assert result == 'plan body'
+        mock_sandbox_spec_service.get_default_sandbox_spec.assert_called_once()
+        remote_workspace_cls.assert_called_once_with(
+            host=replace_localhost_hostname_for_docker('http://localhost:8000'),
+            api_key='test-api-key',
+            working_dir='/workspace',
+        )
+        remote_workspace.file_download.assert_called_once_with(
+            source_path='/workspace/project/PLAN.md',
+            destination_path='/tmp/test-plan',
+        )
+
+    async def test_returns_empty_string_when_default_sandbox_spec_is_unavailable(self):
+        """File reads fail closed when both original and default specs are missing."""
+        conversation_id = uuid4()
+        sandbox_id = str(uuid4())
+
+        mock_service = _make_mock_service(
+            get_conversation_return=_make_mock_app_conversation(
+                conversation_id=conversation_id,
+                sandbox_id=sandbox_id,
+            )
+        )
+
+        mock_sandbox_service = MagicMock()
+        mock_sandbox_service.get_sandbox = AsyncMock(
+            return_value=SandboxInfo(
+                id=sandbox_id,
+                created_by_user_id='test-user',
+                status=SandboxStatus.RUNNING,
+                sandbox_spec_id=str(uuid4()),
+                session_api_key='test-api-key',
+                exposed_urls=[
+                    ExposedUrl(
+                        name=AGENT_SERVER, url='http://localhost:8000', port=8000
+                    )
+                ],
+            )
+        )
+
+        mock_sandbox_spec_service = MagicMock()
+        mock_sandbox_spec_service.get_sandbox_spec = AsyncMock(return_value=None)
+        mock_sandbox_spec_service.get_default_sandbox_spec = AsyncMock(
+            side_effect=RuntimeError('No sandbox specs available!')
+        )
+
+        result = await read_conversation_file(
+            conversation_id=conversation_id,
+            file_path='/workspace/project/PLAN.md',
+            app_conversation_service=mock_service,
+            sandbox_service=mock_sandbox_service,
+            sandbox_spec_service=mock_sandbox_spec_service,
+        )
+
+        assert result == ''
