@@ -65,6 +65,7 @@ INITIAL_BACKOFF_SECONDS = float(os.environ.get('INITIAL_BACKOFF_SECONDS', '1'))
 MAX_BACKOFF_SECONDS = float(os.environ.get('MAX_BACKOFF_SECONDS', '60'))
 BACKOFF_FACTOR = float(os.environ.get('BACKOFF_FACTOR', '2'))
 RATE_LIMIT = float(os.environ.get('RATE_LIMIT', '2'))  # Requests per second
+CREATED_AFTER_DAYS = int(os.environ.get('CREATED_AFTER_DAYS', '7'))
 
 # Set up Resend API
 resend.api_key = RESEND_API_KEY
@@ -113,12 +114,19 @@ def is_valid_email(email: Optional[str]) -> bool:
     return bool(EMAIL_REGEX.match(email))
 
 
-def get_keycloak_users(offset: int = 0, limit: int = 100) -> List[Dict[str, Any]]:
+def get_keycloak_users(
+    offset: int = 0,
+    limit: int = 100,
+    created_after_ms: Optional[int] = None,
+) -> List[Dict[str, Any]]:
     """Get users from Keycloak using the admin client.
 
     Args:
         offset: The offset to start from.
         limit: The maximum number of users to return.
+        created_after_ms: If set, only return users created after this epoch
+            millisecond timestamp. Forwarded as the Keycloak `createdAfter`
+            query parameter.
 
     Returns:
         A list of users.
@@ -134,8 +142,10 @@ def get_keycloak_users(offset: int = 0, limit: int = 100) -> List[Dict[str, Any]
         params: Dict[str, Any] = {
             'first': offset,
             'max': limit,
-            'briefRepresentation': False,  # Get full user details
+            'briefRepresentation': True,
         }
+        if created_after_ms is not None:
+            params['createdAfter'] = created_after_ms
 
         users_data = keycloak_admin.get_users(params)
         logger.info(f'Fetched {len(users_data)} users from Keycloak')
@@ -160,27 +170,6 @@ def get_keycloak_users(offset: int = 0, limit: int = 100) -> List[Dict[str, Any]
         raise
     except Exception:
         logger.exception('Unexpected error getting users from Keycloak')
-        raise
-
-
-def get_total_keycloak_users() -> int:
-    """Get the total number of users in Keycloak.
-
-    Returns:
-        The total number of users.
-
-    Raises:
-        KeycloakClientError: If the API call fails.
-    """
-    try:
-        keycloak_admin = get_keycloak_admin()
-        count = keycloak_admin.users_count()
-        return count
-    except KeycloakError:
-        logger.exception('Failed to get total users from Keycloak')
-        raise
-    except Exception:
-        logger.exception('Unexpected error getting total users from Keycloak')
         raise
 
 
@@ -441,15 +430,14 @@ def sync_users_to_resend():
             synced_user_store, RESEND_AUDIENCE_ID
         )
 
-        # Get the total number of users
-        total_users = get_total_keycloak_users()
+        created_after_ms = int((time.time() - CREATED_AFTER_DAYS * 86400) * 1000)
         logger.info(
-            f'Found {total_users} users in Keycloak realm {KEYCLOAK_REALM_NAME}'
+            f'Fetching Keycloak users created in the last {CREATED_AFTER_DAYS} '
+            f'days (createdAfter={created_after_ms})'
         )
 
-        # Stats
         stats = {
-            'total_users': total_users,
+            'users_seen': 0,
             'backfilled_contacts': backfilled_count,
             'already_synced': 0,
             'added_contacts': 0,
@@ -462,10 +450,13 @@ def sync_users_to_resend():
         )
         logger.info(f'Found {len(synced_emails)} already synced emails in database')
 
-        # Process users in batches
+        # Process users in batches, paging until an empty result terminates the loop.
         offset = 0
-        while offset < total_users:
-            users = get_keycloak_users(offset, BATCH_SIZE)
+        while True:
+            users = get_keycloak_users(offset, BATCH_SIZE, created_after_ms)
+            if not users:
+                break
+            stats['users_seen'] += len(users)
             logger.info(f'Processing batch of {len(users)} users (offset {offset})')
 
             for user in users:

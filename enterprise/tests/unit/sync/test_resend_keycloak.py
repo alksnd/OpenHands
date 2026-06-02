@@ -17,6 +17,7 @@ os.environ['KEYCLOAK_ADMIN_PASSWORD'] = 'test_password'
 
 from enterprise.sync.resend_keycloak import (  # noqa: E402
     add_contact_to_resend,
+    get_keycloak_users,
     is_valid_email,
     send_welcome_email,
 )
@@ -265,3 +266,38 @@ class TestAddContactToResend:
 
         assert result == {'id': 'contact_123'}
         assert mock_create.call_count == 2
+
+
+class TestGetKeycloakUsers:
+    """Tests for the createdAfter / briefRepresentation behavior of get_keycloak_users."""
+
+    @patch('enterprise.sync.resend_keycloak.get_keycloak_admin')
+    def test_passes_created_after_ms(self, mock_get_admin: MagicMock) -> None:
+        """createdAfter is forwarded as a query param when supplied."""
+        mock_admin = MagicMock()
+        mock_admin.get_users.return_value = []
+        mock_get_admin.return_value = mock_admin
+
+        get_keycloak_users(offset=0, limit=100, created_after_ms=1700000000000)
+
+        mock_admin.get_users.assert_called_once()
+        params = mock_admin.get_users.call_args[0][0]
+        assert params['createdAfter'] == 1700000000000
+        assert params['briefRepresentation'] is True
+        assert params['first'] == 0
+        assert params['max'] == 100
+
+    @patch('enterprise.sync.resend_keycloak.get_keycloak_admin')
+    def test_omits_created_after_when_none(self, mock_get_admin: MagicMock) -> None:
+        """createdAfter is absent from the request when not supplied."""
+        mock_admin = MagicMock()
+        mock_admin.get_users.return_value = []
+        mock_get_admin.return_value = mock_admin
+
+        get_keycloak_users(offset=200, limit=50)
+
+        params = mock_admin.get_users.call_args[0][0]
+        assert 'createdAfter' not in params
+        assert params['briefRepresentation'] is True
+        assert params['first'] == 200
+        assert params['max'] == 50
