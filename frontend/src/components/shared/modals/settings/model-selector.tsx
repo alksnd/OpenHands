@@ -14,7 +14,6 @@ import { PRODUCT_URL } from "#/utils/constants";
 import { useSearchProviders } from "#/hooks/query/use-search-providers";
 import { useProviderModels } from "#/hooks/query/use-provider-models";
 import { useConfig } from "#/hooks/query/use-config";
-import { Typography } from "#/ui/typography";
 import { isOheManagedMode } from "#/utils/ohe-managed-mode";
 
 export const CUSTOM_LLM_PROVIDER = "__custom_llm_provider__";
@@ -77,23 +76,35 @@ export function ModelSelector({
   );
 
   const verifiedProviders = React.useMemo(
-    () =>
-      providers.filter(
+    () => {
+      const visibleProviders = providers.filter(
         (p) => p.verified && (!managedProviderOnly || p.name === "openhands"),
-      ),
-    [managedProviderOnly, providers],
+      );
+
+      if (!allowCustomProvider || managedProviderOnly) {
+        return visibleProviders;
+      }
+
+      const customProvider = { name: CUSTOM_LLM_PROVIDER, verified: true };
+      const openHandsIndex = visibleProviders.findIndex(
+        (provider) => provider.name === "openhands",
+      );
+
+      if (openHandsIndex === -1) {
+        return [customProvider, ...visibleProviders];
+      }
+
+      return [
+        ...visibleProviders.slice(0, openHandsIndex + 1),
+        customProvider,
+        ...visibleProviders.slice(openHandsIndex + 1),
+      ];
+    },
+    [allowCustomProvider, managedProviderOnly, providers],
   );
   const unverifiedProviders = React.useMemo(
-    () =>
-      managedProviderOnly
-        ? []
-        : [
-            ...providers.filter((p) => !p.verified),
-            ...(allowCustomProvider
-              ? [{ name: CUSTOM_LLM_PROVIDER, verified: false }]
-              : []),
-          ],
-    [allowCustomProvider, managedProviderOnly, providers],
+    () => (managedProviderOnly ? [] : providers.filter((p) => !p.verified)),
+    [managedProviderOnly, providers],
   );
 
   const verifiedModels = React.useMemo(
@@ -216,15 +227,6 @@ export function ModelSelector({
           ) : null}
         </Autocomplete>
       </fieldset>
-
-      {selectedProvider === "openhands" && isManagedMode ? (
-        <Typography.Paragraph
-          testId="admin-managed-models-help"
-          className="text-xs text-tertiary-alt"
-        >
-          {t(I18nKey.SETTINGS$ADMIN_MANAGED_MODELS_HELP)}
-        </Typography.Paragraph>
-      ) : null}
 
       {selectedProvider === "openhands" && !isManagedMode ? (
         <HelpLink

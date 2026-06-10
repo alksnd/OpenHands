@@ -16,6 +16,7 @@ interface ProfilesBodyProps {
   onDelete: (profile: LlmProfileSummary) => void;
   isActivating: boolean;
   canManage?: boolean;
+  unavailableProfileNames?: Set<string>;
 }
 
 export function ProfilesBody({
@@ -29,6 +30,7 @@ export function ProfilesBody({
   onDelete,
   isActivating,
   canManage = true,
+  unavailableProfileNames,
 }: ProfilesBodyProps) {
   const { t } = useTranslation();
 
@@ -66,6 +68,7 @@ export function ProfilesBody({
           onDelete={onDelete}
           isActivating={isActivating}
           canManage={canManage}
+          isUnavailable={unavailableProfileNames?.has(profile.name) ?? false}
         />
       ))}
     </div>

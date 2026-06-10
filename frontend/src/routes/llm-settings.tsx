@@ -121,6 +121,8 @@ const isManagedLiteLlmSettings = (
   return provider === "openhands" || provider === "litellm_proxy";
 };
 
+type ProfileFormMode = "create" | "edit";
+
 export function LlmSettingsScreen({
   scope = "personal",
 }: {
@@ -172,6 +174,8 @@ export function LlmSettingsScreen({
   // previous Add doesn't leak in.
   const [profileName, setProfileName] = React.useState("");
   const [profileNameWasEdited, setProfileNameWasEdited] = React.useState(false);
+  const [profileFormMode, setProfileFormMode] =
+    React.useState<ProfileFormMode | null>(null);
   // Snapshotted on form open so we can flag the form dirty when the user
   // edits *only* the name — the SDK section page tracks the LLM fields but
   // not the profile-name input that lives outside its schema.
@@ -182,6 +186,7 @@ export function LlmSettingsScreen({
   // getInitialView below.
   const [initialViewHint, setInitialViewHint] =
     React.useState<SettingsView | null>(null);
+  const profileNameInputRef = React.useRef<HTMLInputElement>(null);
 
   const isProfilesView = shouldShowProfilesForScope && showProfiles;
   const isOrgProfileMode = scope === "org";
@@ -198,6 +203,10 @@ export function LlmSettingsScreen({
   const restrictToManagedProvider = isManagedMode && !allowUserLlmConfiguration;
 
   React.useEffect(() => {
+    if (profileFormMode === "create" && !showProfiles) {
+      return;
+    }
+
     if (settings?.llm_model) {
       const trimmedBaseUrl = settings.llm_base_url?.trim() ?? "";
       const shouldSelectCustom =
@@ -222,8 +231,10 @@ export function LlmSettingsScreen({
     allowUserLlmConfiguration,
     isSaasMode,
     managedLiteLlmBaseUrl,
+    profileFormMode,
     settings?.llm_base_url,
     settings?.llm_model,
+    showProfiles,
   ]);
 
   React.useEffect(() => {
@@ -240,10 +251,13 @@ export function LlmSettingsScreen({
 
   const infoMessageKey = React.useMemo((): I18nKey | null => {
     if (!isSaasMode) return null;
-    return scope === "org"
-      ? I18nKey.SETTINGS$ORG_DEFAULTS_INFO
-      : I18nKey.SETTINGS$PERSONAL_AGENT_INFO;
-  }, [isSaasMode, scope]);
+    if (scope !== "org") {
+      return I18nKey.SETTINGS$PERSONAL_AGENT_INFO;
+    }
+    return restrictToManagedProvider
+      ? null
+      : I18nKey.SETTINGS$ORG_DEFAULTS_INFO;
+  }, [isSaasMode, restrictToManagedProvider, scope]);
 
   const maybeSyncProfileName = React.useCallback(
     (model: string) => {
@@ -254,6 +268,18 @@ export function LlmSettingsScreen({
     },
     [profileNameWasEdited],
   );
+
+  const focusProfileNameInput = React.useCallback(() => {
+    window.requestAnimationFrame(() => {
+      const input = profileNameInputRef.current;
+      if (!input) {
+        return;
+      }
+      input.focus();
+      const cursorPosition = input.value.length;
+      input.setSelectionRange(cursorPosition, cursorPosition);
+    });
+  }, []);
 
   const getInitialView = React.useCallback(
     (
@@ -325,15 +351,17 @@ export function LlmSettingsScreen({
       const shouldRenderCustomFields = isSaasMode
         ? isCustomProviderSelected
         : view !== "basic";
-      const activeProvider = !shouldRenderCustomFields
-        ? (selectedProvider ?? derivedProvider)
-        : isCustomProviderSelected
-          ? CUSTOM_LLM_PROVIDER
-          : derivedProvider;
+      let activeProvider = derivedProvider;
+      if (!shouldRenderCustomFields) {
+        activeProvider = selectedProvider ?? derivedProvider;
+      } else if (isCustomProviderSelected) {
+        activeProvider = CUSTOM_LLM_PROVIDER;
+      }
       const shouldHideApiKeyInput =
-        isSaasMode &&
-        activeProvider === "openhands" &&
-        !shouldRenderCustomFields;
+        restrictToManagedProvider ||
+        (isSaasMode &&
+          activeProvider === "openhands" &&
+          !shouldRenderCustomFields);
       const showOpenHandsApiKeyHelp =
         modelValue.startsWith("openhands/") && !isManagedMode;
 
@@ -377,6 +405,23 @@ export function LlmSettingsScreen({
       const profileNamePlaceholder =
         deriveProfileNameFromModel(modelValue) ?? "";
 
+      const profileNameInput = canManageProfilesForScope ? (
+        <ProfileNameInput
+          testId="llm-profile-name-input"
+          ruleTestId="llm-profile-name-rule"
+          value={profileName}
+          placeholder={profileNamePlaceholder}
+          label={t(I18nKey.SETTINGS$LLM_PROFILE_NAME)}
+          helpText={t(I18nKey.SETTINGS$LLM_PROFILE_NAME_HELP)}
+          inputRef={profileNameInputRef}
+          onChange={(value) => {
+            setProfileName(value);
+            setProfileNameWasEdited(true);
+          }}
+          isDisabled={isDisabled}
+        />
+      ) : null;
+
       return (
         <div className="flex flex-col gap-6">
           {infoMessageKey ? (
@@ -386,22 +431,6 @@ export function LlmSettingsScreen({
             >
               {t(infoMessageKey)}
             </Typography.Paragraph>
-          ) : null}
-
-          {canManageProfilesForScope ? (
-            <ProfileNameInput
-              testId="llm-profile-name-input"
-              ruleTestId="llm-profile-name-rule"
-              value={profileName}
-              placeholder={profileNamePlaceholder}
-              label={t(I18nKey.SETTINGS$LLM_PROFILE_NAME)}
-              helpText={t(I18nKey.SETTINGS$LLM_PROFILE_NAME_HELP)}
-              onChange={(value) => {
-                setProfileName(value);
-                setProfileNameWasEdited(true);
-              }}
-              isDisabled={isDisabled}
-            />
           ) : null}
 
           {!shouldRenderCustomFields ? (
@@ -434,6 +463,7 @@ export function LlmSettingsScreen({
                   if (nextModel) {
                     onChange("llm.model", nextModel);
                     maybeSyncProfileName(nextModel);
+                    focusProfileNameInput();
                   }
                 }}
                 wrapperClassName="!flex-col !gap-6"
@@ -502,6 +532,8 @@ export function LlmSettingsScreen({
               )}
             </div>
           )}
+
+          {profileNameInput}
         </div>
       );
     },
@@ -511,6 +543,7 @@ export function LlmSettingsScreen({
       isManagedMode,
       isSaasMode,
       defaultModel,
+      focusProfileNameInput,
       maybeSyncProfileName,
       profileName,
       profileNameWasEdited,
@@ -541,18 +574,18 @@ export function LlmSettingsScreen({
 
       const modelValue =
         typeof context.values["llm.model"] === "string"
-          ? context.values["llm.model"]
+          ? context.values["llm.model"].trim()
           : "";
       const derivedProvider = modelValue
         ? extractModelAndProvider(modelValue).provider || null
         : null;
       const isCustomProviderSelected = selectedProvider === CUSTOM_LLM_PROVIDER;
-      const activeProvider =
-        context.view === "basic" && !isCustomProviderSelected
-          ? (selectedProvider ?? derivedProvider)
-          : isCustomProviderSelected
-            ? CUSTOM_LLM_PROVIDER
-            : derivedProvider;
+      let activeProvider = derivedProvider;
+      if (context.view === "basic" && !isCustomProviderSelected) {
+        activeProvider = selectedProvider ?? derivedProvider;
+      } else if (isCustomProviderSelected) {
+        activeProvider = CUSTOM_LLM_PROVIDER;
+      }
       const shouldUseManagedKey =
         isSaasMode &&
         activeProvider === "openhands" &&
@@ -647,6 +680,7 @@ export function LlmSettingsScreen({
     setProfileNameWasEdited(false);
     setInitialProfileName("");
     setInitialViewHint(null);
+    setProfileFormMode(null);
     setShowProfiles(true);
   }, [
     activateProfile,
@@ -663,14 +697,38 @@ export function LlmSettingsScreen({
   ]);
 
   const openForm = (view: SettingsView | null, name = "") => {
-    setProfileName(
-      name || deriveProfileNameFromModel(settings?.llm_model ?? "") || "",
-    );
-    setProfileNameWasEdited(Boolean(name));
+    const isEdit = Boolean(name);
+    setProfileName(isEdit ? name : "");
+    setProfileNameWasEdited(isEdit);
+    setProfileFormMode(isEdit ? "edit" : "create");
     setInitialProfileName(name);
     setInitialViewHint(view);
+    if (!isEdit) {
+      setSelectedProvider(null);
+    }
     setShowProfiles(false);
   };
+
+  const createProfileInitialValueOverrides = React.useMemo(
+    () =>
+      profileFormMode === "create"
+        ? {
+            agent_settings: {
+              "llm.model": "",
+              "llm.api_key": "",
+              "llm.base_url": "",
+            },
+          }
+        : undefined,
+    [profileFormMode],
+  );
+
+  const viewOverride = React.useMemo<SettingsView | null>(() => {
+    if (!isSaasMode) {
+      return null;
+    }
+    return selectedProvider === CUSTOM_LLM_PROVIDER ? "advanced" : "basic";
+  }, [isSaasMode, selectedProvider]);
 
   if (isProfilesView) {
     if (isOrgProfileMode) {
@@ -710,6 +768,7 @@ export function LlmSettingsScreen({
       type="button"
       onClick={() => {
         setInitialViewHint(null);
+        setProfileFormMode(null);
         setShowProfiles(true);
       }}
       className="flex items-center gap-2 self-start text-sm text-gray-300 hover:text-white cursor-pointer"
@@ -742,15 +801,17 @@ export function LlmSettingsScreen({
         extraDirty={canManageProfilesForScope}
         onSaveSuccess={handleSaveSuccess}
         getInitialView={getInitialView}
+        initialValueOverrides={createProfileInitialValueOverrides}
+        isSaveDisabled={({ values }) =>
+          profileFormMode === "create" &&
+          !(
+            typeof values["llm.model"] === "string" &&
+            values["llm.model"].trim().length > 0
+          )
+        }
         forceShowAdvancedView
         hideViewToggle={isSaasMode}
-        viewOverride={
-          isSaasMode
-            ? selectedProvider === CUSTOM_LLM_PROVIDER
-              ? "advanced"
-              : "basic"
-            : null
-        }
+        viewOverride={viewOverride}
         allowAllView={!isSaasMode}
         testId="llm-settings-screen"
       />

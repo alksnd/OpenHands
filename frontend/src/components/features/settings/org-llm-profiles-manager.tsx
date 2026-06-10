@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { BrandButton } from "#/components/features/settings/brand-button";
 import { OrgRenameProfileModal } from "#/components/features/settings/org-rename-profile-modal";
@@ -10,6 +10,9 @@ import { useActivateOrgLlmProfile } from "#/hooks/mutation/use-org-llm-profile-m
 import { mutateWithToast } from "#/utils/mutate-with-toast";
 import { extractErrorMessage } from "#/utils/extract-error-message";
 import { I18nKey } from "#/i18n/declaration";
+import { useConfig } from "#/hooks/query/use-config";
+import { useProviderModels } from "#/hooks/query/use-provider-models";
+import { isOheManagedMode } from "#/utils/ohe-managed-mode";
 
 interface OrgLlmProfilesManagerProps {
   orgId: string;
@@ -17,6 +20,17 @@ interface OrgLlmProfilesManagerProps {
   onAddProfile?: () => void;
   onEditProfile?: (profile: LlmProfileSummary) => void;
 }
+
+const getManagedModelAlias = (model: string | null) => {
+  if (!model) return null;
+  if (model.startsWith("openhands/")) {
+    return model.slice("openhands/".length);
+  }
+  if (model.startsWith("litellm_proxy/")) {
+    return model.slice("litellm_proxy/".length);
+  }
+  return null;
+};
 
 export function OrgLlmProfilesManager({
   orgId,
@@ -26,6 +40,10 @@ export function OrgLlmProfilesManager({
 }: OrgLlmProfilesManagerProps) {
   const { t } = useTranslation();
   const { data, isLoading, error } = useOrgLlmProfiles(orgId);
+  const { data: config } = useConfig();
+  const isManagedMode = isOheManagedMode(config);
+  const { data: managedModels = [], isSuccess: managedModelsLoaded } =
+    useProviderModels(isManagedMode ? "openhands" : null);
   const activateProfile = useActivateOrgLlmProfile(orgId);
 
   const [profileToRename, setProfileToRename] =
@@ -35,6 +53,29 @@ export function OrgLlmProfilesManager({
 
   const profiles = data?.profiles ?? [];
   const active = data?.active_profile ?? null;
+  const availableManagedModelNames = useMemo(
+    () => new Set(managedModels.map((model) => model.name)),
+    [managedModels],
+  );
+  const unavailableProfileNames = useMemo(() => {
+    if (!isManagedMode || !managedModelsLoaded) {
+      return undefined;
+    }
+
+    return new Set(
+      profiles
+        .filter((profile) => {
+          const alias = getManagedModelAlias(profile.model);
+          return alias !== null && !availableManagedModelNames.has(alias);
+        })
+        .map((profile) => profile.name),
+    );
+  }, [
+    availableManagedModelNames,
+    isManagedMode,
+    managedModelsLoaded,
+    profiles,
+  ]);
 
   const handleActivate = async (name: string) => {
     await mutateWithToast(activateProfile, name, {
@@ -78,6 +119,7 @@ export function OrgLlmProfilesManager({
           onDelete={setProfileToDelete}
           isActivating={activateProfile.isPending}
           canManage={canManage}
+          unavailableProfileNames={unavailableProfileNames}
         />
       </div>
 

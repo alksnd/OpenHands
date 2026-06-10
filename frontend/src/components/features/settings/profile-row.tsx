@@ -4,6 +4,7 @@ import { ProfileActionsMenu } from "#/components/features/settings/profile-actio
 import { LlmProfileSummary } from "#/api/settings-service/profiles-service.api";
 import { I18nKey } from "#/i18n/declaration";
 import { Typography } from "#/ui/typography";
+import { StyledTooltip } from "#/components/shared/buttons/styled-tooltip";
 import ThreeDotsVerticalIcon from "#/icons/three-dots-vertical.svg?react";
 
 interface ProfileRowProps {
@@ -15,6 +16,7 @@ interface ProfileRowProps {
   onDelete: (profile: LlmProfileSummary) => void;
   isActivating: boolean;
   canManage?: boolean;
+  isUnavailable?: boolean;
 }
 
 export function ProfileRow({
@@ -26,6 +28,7 @@ export function ProfileRow({
   onDelete,
   isActivating,
   canManage = true,
+  isUnavailable = false,
 }: ProfileRowProps) {
   const { t } = useTranslation();
   const [menuOpen, setMenuOpen] = useState(false);
@@ -58,6 +61,20 @@ export function ProfileRow({
             {t(I18nKey.SETTINGS$PROFILE_ACTIVE_BADGE)}
           </Typography.Text>
         )}
+        {isUnavailable ? (
+          <StyledTooltip
+            content={t(I18nKey.SETTINGS$PROFILE_UNAVAILABLE_TOOLTIP)}
+            placement="top"
+            showArrow
+          >
+            <Typography.Text
+              className="text-xs bg-yellow-400/15 text-yellow-300 border border-yellow-400/30 font-semibold rounded-full px-2 py-0.5 whitespace-nowrap self-start sm:self-auto"
+              testId="profile-unavailable-badge"
+            >
+              {t(I18nKey.SETTINGS$PROFILE_UNAVAILABLE_BADGE)}
+            </Typography.Text>
+          </StyledTooltip>
+        ) : null}
       </div>
       {canManage ? (
         <div className="relative shrink-0">
@@ -78,6 +95,7 @@ export function ProfileRow({
               onDelete={() => onDelete(profile)}
               isActive={isActive}
               isActivating={isActivating}
+              isUnavailable={isUnavailable}
               onClose={() => setMenuOpen(false)}
             />
           )}

@@ -17,6 +17,7 @@ interface ProfileActionsMenuProps {
   onDelete: () => void;
   isActive: boolean;
   isActivating: boolean;
+  isUnavailable?: boolean;
   onClose: () => void;
 }
 
@@ -38,6 +39,7 @@ export function ProfileActionsMenu({
   onDelete,
   isActive,
   isActivating,
+  isUnavailable,
   onClose,
 }: ProfileActionsMenuProps) {
   const { t } = useTranslation();
@@ -61,7 +63,7 @@ export function ProfileActionsMenu({
       icon: CheckmarkIcon,
       label: t(I18nKey.SETTINGS$PROFILE_SET_ACTIVE),
       onSelect: onSetActive,
-      isDisabled: isActive || isActivating,
+      isDisabled: isActive || isActivating || isUnavailable,
     },
     {
       testId: "profile-delete",

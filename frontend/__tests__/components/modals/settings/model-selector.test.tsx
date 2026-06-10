@@ -62,9 +62,7 @@ vi.mock("react-i18next", () => ({
         LLM$SELECT_PROVIDER_PLACEHOLDER: "Select a provider",
         LLM$SELECT_MODEL_PLACEHOLDER: "Select a model",
         SETTINGS$ADMIN_MANAGED_PROVIDER: "Default",
-        SETTINGS$CUSTOM_LLM_PROVIDER: "Custom LLM Provider",
-        SETTINGS$ADMIN_MANAGED_MODELS_HELP:
-          "These models are configured for this OpenHands Enterprise instance by your administrator.",
+        SETTINGS$CUSTOM_LLM_PROVIDER: "Custom LLM Provider (Advanced)",
         SETTINGS$NEED_OPENHANDS_ACCOUNT: "Need an OpenHands Account?",
         SETTINGS$CLICK_HERE: "Click here",
       };
@@ -118,9 +116,6 @@ describe("ModelSelector", () => {
     await user.click(screen.getByText("Default"));
 
     expect(screen.getByLabelText("LLM Provider")).toHaveValue("Default");
-    expect(screen.getByTestId("admin-managed-models-help")).toHaveTextContent(
-      "These models are configured for this OpenHands Enterprise instance by your administrator.",
-    );
     expect(
       screen.queryByTestId("openhands-account-help"),
     ).not.toBeInTheDocument();
@@ -227,7 +222,9 @@ describe("ModelSelector", () => {
     expect(screen.getByText("Default")).toBeInTheDocument();
     expect(screen.queryByText("OpenAI")).not.toBeInTheDocument();
     expect(screen.queryByText("Azure")).not.toBeInTheDocument();
-    expect(screen.queryByText("Custom LLM Provider")).not.toBeInTheDocument();
+    expect(
+      screen.queryByText("Custom LLM Provider (Advanced)"),
+    ).not.toBeInTheDocument();
   });
 
   it("offers Custom LLM Provider and hides model selection when selected", async () => {
@@ -237,12 +234,30 @@ describe("ModelSelector", () => {
 
     const providerSelector = screen.getByLabelText("LLM Provider");
     await user.click(providerSelector);
-    await user.click(screen.getByText("Custom LLM Provider"));
+    await user.click(screen.getByText("Custom LLM Provider (Advanced)"));
 
     expect(onChange).toHaveBeenCalledWith(CUSTOM_LLM_PROVIDER, null);
     expect(screen.getByLabelText("LLM Provider")).toHaveValue(
-      "Custom LLM Provider",
+      "Custom LLM Provider (Advanced)",
     );
     expect(screen.queryByLabelText("LLM Model")).not.toBeInTheDocument();
+  });
+
+  it("places Custom LLM Provider immediately after OpenHands", async () => {
+    const user = userEvent.setup();
+    renderWithQuery(<ModelSelector allowCustomProvider />);
+
+    const providerSelector = screen.getByLabelText("LLM Provider");
+    await user.click(providerSelector);
+
+    const providerOptions = screen
+      .getAllByTestId(/^provider-item-/)
+      .map((option) => option.textContent);
+
+    expect(providerOptions.slice(0, 3)).toEqual([
+      "OpenHands",
+      "Custom LLM Provider (Advanced)",
+      "OpenAI",
+    ]);
   });
 });
