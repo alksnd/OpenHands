@@ -212,7 +212,7 @@ function buildSettingsWithAdvancedToggle(
   return buildSettings({ ...overrides, agent_settings_schema: schema });
 }
 
-async function selectProvider(providerLabel: "OpenHands" | "OpenAI") {
+async function selectProvider(providerLabel: string) {
   const providerInput = screen.getByTestId("llm-provider-input");
   await userEvent.click(providerInput);
   await userEvent.click(await screen.findByText(providerLabel));
@@ -240,6 +240,9 @@ function getPayloadAgentSettings(
 
 async function renderLlmSettingsScreen({
   appMode = "oss",
+  allowUserLlmConfiguration,
+  deploymentMode,
+  managedLiteLlmBaseUrl,
   organizationId = "1",
   meData,
   organizations,
@@ -247,6 +250,9 @@ async function renderLlmSettingsScreen({
   view = "form",
 }: {
   appMode?: "oss" | "saas";
+  allowUserLlmConfiguration?: boolean;
+  deploymentMode?: "cloud" | "self_hosted";
+  managedLiteLlmBaseUrl?: string | null;
   organizationId?: string;
   meData?: OrganizationMember;
   organizations?: Organization[];
@@ -265,7 +271,14 @@ async function renderLlmSettingsScreen({
 
   useSelectedOrganizationStore.setState({ organizationId });
   mockUseConfig.mockReturnValue({
-    data: { app_mode: appMode },
+    data: {
+      app_mode: appMode,
+      feature_flags: {
+        deployment_mode: deploymentMode,
+      },
+      managed_litellm_base_url: managedLiteLlmBaseUrl,
+      allow_user_llm_configuration: allowUserLlmConfiguration,
+    },
     isLoading: false,
   });
 
@@ -307,7 +320,7 @@ beforeEach(() => {
   resetTestHandlersMockSettings();
   mockUseSearchParams.mockReturnValue([{ get: () => null }, vi.fn()]);
   mockUseConfig.mockReturnValue({
-    data: { app_mode: "oss" },
+    data: { app_mode: "oss", feature_flags: {} },
     isLoading: false,
   });
   useSelectedOrganizationStore.setState({ organizationId: "1" });
@@ -360,7 +373,7 @@ describe("LlmSettingsScreen", () => {
     expect(screen.getByTestId("sdk-section-all-toggle")).toBeInTheDocument();
   });
 
-  it("keeps Advanced visible but hides All in SaaS mode for the default LLM route schema", async () => {
+  it("hides Basic/Advanced/All toggles in SaaS mode and uses Custom LLM Provider for custom settings", async () => {
     vi.spyOn(organizationService, "getOrganizationSettings").mockResolvedValue(
       buildSettings({
         agent_settings: {
@@ -375,13 +388,16 @@ describe("LlmSettingsScreen", () => {
 
     await screen.findByTestId("llm-settings-screen");
     expect(
-      screen.getByTestId("sdk-section-advanced-toggle"),
-    ).toBeInTheDocument();
+      screen.queryByTestId("sdk-section-basic-toggle"),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByTestId("sdk-section-advanced-toggle"),
+    ).not.toBeInTheDocument();
     expect(
       screen.queryByTestId("sdk-section-all-toggle"),
     ).not.toBeInTheDocument();
 
-    await userEvent.click(screen.getByTestId("sdk-section-advanced-toggle"));
+    await selectProvider("SETTINGS$CUSTOM_LLM_PROVIDER");
 
     expect(
       screen.getByTestId("llm-settings-form-advanced"),
@@ -583,6 +599,165 @@ describe("LlmSettingsScreen", () => {
     ).not.toBeInTheDocument();
   });
 
+  it("defaults to basic view when OHE org settings use the managed LiteLLM base URL", async () => {
+    const schema = structuredClone(
+      MOCK_DEFAULT_USER_SETTINGS.agent_settings_schema!,
+    );
+    const llmSection = schema.sections.find((section) => section.key === "llm");
+
+    if (!llmSection) {
+      throw new Error("Expected llm section in test schema");
+    }
+
+    llmSection.fields.push({
+      key: "llm.timeout",
+      label: "Timeout",
+      section: "llm",
+      section_label: "LLM",
+      value_type: "integer",
+      default: 30,
+      choices: [],
+      depends_on: [],
+      prominence: "minor",
+      secret: false,
+      required: false,
+    });
+
+    vi.spyOn(organizationService, "getOrganizationSettings").mockResolvedValue(
+      buildSettings({
+        llm_model: "openhands/claude-sonnet",
+        llm_base_url: "http://openhands-litellm:4000",
+        agent_settings_schema: schema,
+        agent_settings: {
+          llm: {
+            model: "openhands/claude-sonnet",
+            base_url: "http://openhands-litellm:4000",
+          },
+        },
+      }),
+    );
+
+    await renderLlmSettingsScreen({
+      appMode: "saas",
+      deploymentMode: "self_hosted",
+      managedLiteLlmBaseUrl: "http://openhands-litellm:4000",
+      scope: "org",
+    });
+
+    await screen.findByTestId("llm-settings-form-basic");
+    expect(
+      screen.queryByTestId("sdk-settings-llm.timeout"),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByTestId("llm-settings-form-advanced"),
+    ).not.toBeInTheDocument();
+  });
+
+  it("defaults to basic Default-provider view for OHE org profiles on all-hands.dev test installs", async () => {
+    const schema = structuredClone(
+      MOCK_DEFAULT_USER_SETTINGS.agent_settings_schema!,
+    );
+    const llmSection = schema.sections.find((section) => section.key === "llm");
+
+    if (!llmSection) {
+      throw new Error("Expected llm section in test schema");
+    }
+
+    llmSection.fields.push({
+      key: "llm.timeout",
+      label: "Timeout",
+      section: "llm",
+      section_label: "LLM",
+      value_type: "integer",
+      default: 30,
+      choices: [],
+      depends_on: [],
+      prominence: "minor",
+      secret: false,
+      required: false,
+    });
+
+    vi.spyOn(organizationService, "getOrganizationSettings").mockResolvedValue(
+      buildSettings({
+        llm_model: "openhands/claude-sonnet-4-5-20250929",
+        llm_base_url: "http://openhands-litellm:4000",
+        agent_settings_schema: schema,
+        agent_settings: {
+          llm: {
+            model: "openhands/claude-sonnet-4-5-20250929",
+            base_url: "http://openhands-litellm:4000",
+          },
+        },
+      }),
+    );
+
+    await renderLlmSettingsScreen({
+      appMode: "saas",
+      deploymentMode: "cloud",
+      managedLiteLlmBaseUrl: "http://openhands-litellm:4000",
+      scope: "org",
+    });
+
+    const basicForm = await screen.findByTestId("llm-settings-form-basic");
+    expect(
+      screen.queryByTestId("llm-settings-form-advanced"),
+    ).not.toBeInTheDocument();
+    expect(within(basicForm).getByTestId("llm-provider-input")).not.toHaveValue(
+      "OpenHands",
+    );
+    expect(
+      within(basicForm).queryByTestId("openhands-api-key-help"),
+    ).not.toBeInTheDocument();
+    expect(
+      within(basicForm).queryByTestId("llm-api-key-input"),
+    ).not.toBeInTheDocument();
+  });
+
+  it("restricts OHE org profile creation to default models when user LLM configuration is disabled", async () => {
+    vi.spyOn(organizationService, "getOrganizationSettings").mockResolvedValue(
+      buildSettings({
+        llm_model: "openhands/claude-sonnet-4-5-20250929",
+        llm_base_url: "http://openhands-litellm:4000",
+        agent_settings: {
+          llm: {
+            model: "openhands/claude-sonnet-4-5-20250929",
+            base_url: "http://openhands-litellm:4000",
+          },
+        },
+      }),
+    );
+
+    await renderLlmSettingsScreen({
+      appMode: "saas",
+      allowUserLlmConfiguration: false,
+      deploymentMode: "self_hosted",
+      managedLiteLlmBaseUrl: "http://openhands-litellm:4000",
+      scope: "org",
+    });
+
+    const basicForm = await screen.findByTestId("llm-settings-form-basic");
+    const providerInput = within(basicForm).getByTestId("llm-provider-input");
+
+    await waitFor(() => {
+      expect(providerInput).toHaveValue("SETTINGS$ADMIN_MANAGED_PROVIDER");
+    });
+
+    await userEvent.click(providerInput);
+    expect(
+      screen.getAllByText("SETTINGS$ADMIN_MANAGED_PROVIDER").length,
+    ).toBeGreaterThan(0);
+    expect(screen.queryByText("OpenAI")).not.toBeInTheDocument();
+    expect(
+      screen.queryByText("SETTINGS$CUSTOM_LLM_PROVIDER"),
+    ).not.toBeInTheDocument();
+    expect(
+      within(basicForm).queryByTestId("llm-api-key-input"),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByTestId("llm-settings-form-advanced"),
+    ).not.toBeInTheDocument();
+  });
+
   it("defaults to basic view on first personal SaaS visit even when effective settings include inherited org-only LLM fields", async () => {
     const schema = structuredClone(
       MOCK_DEFAULT_USER_SETTINGS.agent_settings_schema!,
@@ -642,6 +817,34 @@ describe("LlmSettingsScreen", () => {
     await screen.findByTestId("llm-settings-screen");
     expect(screen.queryByTestId("llm-api-key-input")).not.toBeInTheDocument();
     expect(screen.getByTestId("openhands-api-key-help")).toBeInTheDocument();
+  });
+
+  it("hides SaaS OpenHands API key help for OHE managed models", async () => {
+    vi.spyOn(SettingsService, "getSettings").mockResolvedValue(
+      buildSettings({
+        llm_model: "openhands/claude-sonnet",
+        llm_base_url: "http://openhands-litellm:4000",
+        agent_settings: {
+          llm: {
+            model: "openhands/claude-sonnet",
+            base_url: "http://openhands-litellm:4000",
+          },
+        },
+      }),
+    );
+
+    await renderLlmSettingsScreen({
+      appMode: "saas",
+      deploymentMode: "self_hosted",
+      managedLiteLlmBaseUrl: "http://openhands-litellm:4000",
+    });
+
+    await screen.findByTestId("llm-settings-screen");
+    expect(screen.queryByTestId("llm-api-key-input")).not.toBeInTheDocument();
+    expect(
+      screen.queryByTestId("openhands-api-key-help"),
+    ).not.toBeInTheDocument();
+    expect(screen.getByTestId("admin-managed-models-help")).toBeInTheDocument();
   });
 
   it("shows the API key input for non-OpenHands providers in SaaS mode", async () => {
@@ -839,6 +1042,7 @@ describe("LlmSettingsScreen", () => {
 
     await screen.findByTestId("llm-settings-form-advanced");
     await userEvent.click(screen.getByTestId("sdk-section-basic-toggle"));
+    await screen.findByTestId("llm-settings-form-basic");
 
     const apiKeyInput = await screen.findByTestId("llm-api-key-input");
     await userEvent.type(apiKeyInput, "test-api-key");
@@ -1162,12 +1366,11 @@ describe("LlmSettingsScreen", () => {
   it("does not clear the hidden search API key on SaaS org settings when saving basic view", async () => {
     let persistedSettings = buildSettingsWithAdvancedToggle({
       llm_model: "openai/gpt-4o",
-      llm_base_url: "https://custom.example/v1",
+      llm_base_url: "",
       search_api_key: "****1234",
       agent_settings: {
         llm: {
           model: "openai/gpt-4o",
-          base_url: "https://custom.example/v1",
         },
       },
     });
@@ -1207,8 +1410,7 @@ describe("LlmSettingsScreen", () => {
 
     await renderLlmSettingsScreen({ appMode: "saas", scope: "org" });
 
-    await screen.findByTestId("llm-settings-form-advanced");
-    await userEvent.click(screen.getByTestId("sdk-section-basic-toggle"));
+    await screen.findByTestId("llm-settings-form-basic");
 
     const apiKeyInput = await screen.findByTestId("llm-api-key-input");
     await userEvent.type(apiKeyInput, "test-api-key");
@@ -1917,7 +2119,7 @@ describe("LlmSettingsScreen", () => {
         expect(screen.getByTestId("save-button")).toBeInTheDocument();
       });
 
-      it("should keep the advanced/basic toggle enabled for members", async () => {
+      it("should let members select Custom LLM Provider when user LLM configuration is allowed", async () => {
         vi.spyOn(SettingsService, "getSettings").mockResolvedValue(
           buildSettingsWithAdvancedToggle(),
         );
@@ -1929,16 +2131,22 @@ describe("LlmSettingsScreen", () => {
         });
 
         await screen.findByTestId("llm-settings-screen");
-        const basicToggle = screen.getByTestId("sdk-section-basic-toggle");
-        const advancedToggle = screen.getByTestId(
-          "sdk-section-advanced-toggle",
-        );
-
-        expect(basicToggle).toBeEnabled();
-        expect(advancedToggle).toBeEnabled();
+        expect(
+          screen.queryByTestId("sdk-section-basic-toggle"),
+        ).not.toBeInTheDocument();
+        expect(
+          screen.queryByTestId("sdk-section-advanced-toggle"),
+        ).not.toBeInTheDocument();
         expect(
           screen.getByTestId("llm-settings-form-basic"),
         ).toBeInTheDocument();
+
+        await selectProvider("SETTINGS$CUSTOM_LLM_PROVIDER");
+
+        const advancedForm = screen.getByTestId("llm-settings-form-advanced");
+        expect(
+          within(advancedForm).getByTestId("llm-custom-model-input"),
+        ).toBeEnabled();
       });
     });
 
@@ -1986,9 +2194,7 @@ describe("LlmSettingsScreen", () => {
         });
 
         await screen.findByTestId("llm-settings-screen");
-        await userEvent.click(
-          screen.getByTestId("sdk-section-advanced-toggle"),
-        );
+        await selectProvider("SETTINGS$CUSTOM_LLM_PROVIDER");
 
         const advancedForm = screen.getByTestId("llm-settings-form-advanced");
         const customModelInput = within(advancedForm).getByTestId(
@@ -2113,9 +2319,7 @@ describe("LlmSettingsScreen", () => {
         });
 
         await screen.findByTestId("llm-settings-screen");
-        await userEvent.click(
-          screen.getByTestId("sdk-section-advanced-toggle"),
-        );
+        await selectProvider("SETTINGS$CUSTOM_LLM_PROVIDER");
 
         const advancedForm = screen.getByTestId("llm-settings-form-advanced");
         const customModelInput = within(advancedForm).getByTestId(
@@ -2267,10 +2471,11 @@ describe("LlmSettingsScreen", () => {
         meData: buildOrganizationMember({ org_id: "3", role: "admin" }),
       });
 
-      await userEvent.type(
-        await screen.findByTestId("llm-profile-name-input"),
-        "team-profile",
+      const profileNameInput = await screen.findByTestId(
+        "llm-profile-name-input",
       );
+      await userEvent.clear(profileNameInput);
+      await userEvent.type(profileNameInput, "team-profile");
       await userEvent.type(
         await screen.findByTestId("llm-api-key-input"),
         "test-api-key",
@@ -2308,10 +2513,11 @@ describe("LlmSettingsScreen", () => {
 
       await renderLlmSettingsScreen({ appMode: "oss" });
 
-      await userEvent.type(
-        await screen.findByTestId("llm-profile-name-input"),
-        "my-custom-name",
+      const profileNameInput = await screen.findByTestId(
+        "llm-profile-name-input",
       );
+      await userEvent.clear(profileNameInput);
+      await userEvent.type(profileNameInput, "my-custom-name");
       await userEvent.type(
         await screen.findByTestId("llm-api-key-input"),
         "test-api-key",

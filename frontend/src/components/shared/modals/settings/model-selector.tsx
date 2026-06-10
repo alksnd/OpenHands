@@ -13,6 +13,11 @@ import { HelpLink } from "#/ui/help-link";
 import { PRODUCT_URL } from "#/utils/constants";
 import { useSearchProviders } from "#/hooks/query/use-search-providers";
 import { useProviderModels } from "#/hooks/query/use-provider-models";
+import { useConfig } from "#/hooks/query/use-config";
+import { Typography } from "#/ui/typography";
+import { isOheManagedMode } from "#/utils/ohe-managed-mode";
+
+export const CUSTOM_LLM_PROVIDER = "__custom_llm_provider__";
 
 interface ModelSelectorProps {
   isDisabled?: boolean;
@@ -22,6 +27,9 @@ interface ModelSelectorProps {
     provider: string | null,
     model: string | null,
   ) => void;
+  selectedProviderOverride?: string | null;
+  managedProviderOnly?: boolean;
+  allowCustomProvider?: boolean;
   wrapperClassName?: string;
   labelClassName?: string;
 }
@@ -31,6 +39,9 @@ export function ModelSelector({
   currentModel,
   onChange,
   onDefaultValuesChanged,
+  selectedProviderOverride,
+  managedProviderOnly = false,
+  allowCustomProvider = false,
   wrapperClassName,
   labelClassName,
 }: ModelSelectorProps) {
@@ -39,21 +50,50 @@ export function ModelSelector({
     null,
   );
   const [selectedModel, setSelectedModel] = React.useState<string | null>(null);
+  const { t } = useTranslation();
 
   const { data: providers = [] } = useSearchProviders();
   const {
     data: providerModels = [],
     isLoading: isLoadingModels,
     error: modelsError,
-  } = useProviderModels(selectedProvider);
+  } = useProviderModels(
+    selectedProvider === CUSTOM_LLM_PROVIDER ? null : selectedProvider,
+  );
+  const { data: config } = useConfig();
+  const isManagedMode = isOheManagedMode(config);
+  const openHandsProviderLabel = isManagedMode
+    ? t(I18nKey.SETTINGS$ADMIN_MANAGED_PROVIDER)
+    : undefined;
+  const getProviderLabel = React.useCallback(
+    (provider: string) => {
+      if (provider === CUSTOM_LLM_PROVIDER) {
+        return t(I18nKey.SETTINGS$CUSTOM_LLM_PROVIDER);
+      }
+
+      return mapProvider(provider, { openhandsLabel: openHandsProviderLabel });
+    },
+    [openHandsProviderLabel, t],
+  );
 
   const verifiedProviders = React.useMemo(
-    () => providers.filter((p) => p.verified),
-    [providers],
+    () =>
+      providers.filter(
+        (p) => p.verified && (!managedProviderOnly || p.name === "openhands"),
+      ),
+    [managedProviderOnly, providers],
   );
   const unverifiedProviders = React.useMemo(
-    () => providers.filter((p) => !p.verified),
-    [providers],
+    () =>
+      managedProviderOnly
+        ? []
+        : [
+            ...providers.filter((p) => !p.verified),
+            ...(allowCustomProvider
+              ? [{ name: CUSTOM_LLM_PROVIDER, verified: false }]
+              : []),
+          ],
+    [allowCustomProvider, managedProviderOnly, providers],
   );
 
   const verifiedModels = React.useMemo(
@@ -66,20 +106,40 @@ export function ModelSelector({
   );
 
   React.useEffect(() => {
-    if (currentModel) {
-      const { provider, model } = extractModelAndProvider(currentModel);
+    const { provider, model } = currentModel
+      ? extractModelAndProvider(currentModel)
+      : { provider: null, model: null };
+    const nextProvider =
+      selectedProviderOverride !== undefined
+        ? selectedProviderOverride
+        : provider || null;
 
-      setLitellmId(currentModel);
-      setSelectedProvider(provider || null);
+    setSelectedProvider(nextProvider);
+
+    if (!nextProvider || nextProvider === CUSTOM_LLM_PROVIDER) {
+      setSelectedModel(null);
+      setLitellmId(null);
+      return;
+    }
+
+    const nextModel = provider === nextProvider ? model : null;
+    setSelectedModel(nextModel);
+    setLitellmId(nextModel ? currentModel! : `${nextProvider}/`);
+
+    if (selectedProviderOverride !== undefined) {
+      return;
+    }
+
+    if (currentModel && nextModel) {
       setSelectedModel(model);
       onDefaultValuesChanged?.(provider || null, model);
     }
-  }, [currentModel]);
+  }, [currentModel, onDefaultValuesChanged, selectedProviderOverride]);
 
   const handleChangeProvider = (provider: string) => {
     setSelectedProvider(provider);
     setSelectedModel(null);
-    setLitellmId(`${provider}/`);
+    setLitellmId(provider === CUSTOM_LLM_PROVIDER ? null : `${provider}/`);
     onChange?.(provider, null);
   };
 
@@ -98,8 +158,6 @@ export function ModelSelector({
     setSelectedProvider(null);
     setLitellmId(null);
   };
-
-  const { t } = useTranslation();
 
   return (
     <div
@@ -143,7 +201,7 @@ export function ModelSelector({
                 data-testid={`provider-item-${provider.name}`}
                 key={provider.name}
               >
-                {mapProvider(provider.name)}
+                {getProviderLabel(provider.name)}
               </AutocompleteItem>
             ))}
           </AutocompleteSection>
@@ -151,7 +209,7 @@ export function ModelSelector({
             <AutocompleteSection title={t(I18nKey.MODEL_SELECTOR$OTHERS)}>
               {unverifiedProviders.map((provider) => (
                 <AutocompleteItem key={provider.name}>
-                  {mapProvider(provider.name)}
+                  {getProviderLabel(provider.name)}
                 </AutocompleteItem>
               ))}
             </AutocompleteSection>
@@ -159,7 +217,16 @@ export function ModelSelector({
         </Autocomplete>
       </fieldset>
 
-      {selectedProvider === "openhands" && (
+      {selectedProvider === "openhands" && isManagedMode ? (
+        <Typography.Paragraph
+          testId="admin-managed-models-help"
+          className="text-xs text-tertiary-alt"
+        >
+          {t(I18nKey.SETTINGS$ADMIN_MANAGED_MODELS_HELP)}
+        </Typography.Paragraph>
+      ) : null}
+
+      {selectedProvider === "openhands" && !isManagedMode ? (
         <HelpLink
           testId="openhands-account-help"
           text={t(I18nKey.SETTINGS$NEED_OPENHANDS_ACCOUNT)}
@@ -168,61 +235,65 @@ export function ModelSelector({
           size="settings"
           linkColor="white"
         />
-      )}
+      ) : null}
 
-      <fieldset className="flex flex-col gap-2.5 w-full">
-        <label className={cn("text-sm", labelClassName)}>
-          {t(I18nKey.LLM$MODEL)}
-        </label>
-        <Autocomplete
-          data-testid="llm-model-input"
-          isRequired
-          isVirtualized={false}
-          isLoading={isLoadingModels}
-          name="llm-model-input"
-          aria-label={t(I18nKey.LLM$MODEL)}
-          placeholder={t(I18nKey.LLM$SELECT_MODEL_PLACEHOLDER)}
-          isClearable={false}
-          onSelectionChange={(e) => {
-            if (e?.toString()) handleChangeModel(e.toString());
-          }}
-          isDisabled={isDisabled || !selectedProvider}
-          selectedKey={selectedModel}
-          defaultSelectedKey={selectedModel ?? undefined}
-          classNames={{
-            popoverContent: "bg-tertiary rounded-xl border border-[#717888]",
-          }}
-          inputProps={{
-            classNames: {
-              inputWrapper:
-                "bg-tertiary border border-[#717888] h-10 w-full rounded-sm p-2 placeholder:italic",
-            },
-          }}
-        >
-          <AutocompleteSection title={t(I18nKey.MODEL_SELECTOR$VERIFIED)}>
-            {verifiedModels.map((model) => (
-              <AutocompleteItem key={model.name}>{model.name}</AutocompleteItem>
-            ))}
-          </AutocompleteSection>
-          {unverifiedModels.length > 0 ? (
-            <AutocompleteSection title={t(I18nKey.MODEL_SELECTOR$OTHERS)}>
-              {unverifiedModels.map((model) => (
-                <AutocompleteItem
-                  data-testid={`model-item-${model.name}`}
-                  key={model.name}
-                >
+      {selectedProvider !== CUSTOM_LLM_PROVIDER ? (
+        <fieldset className="flex flex-col gap-2.5 w-full">
+          <label className={cn("text-sm", labelClassName)}>
+            {t(I18nKey.LLM$MODEL)}
+          </label>
+          <Autocomplete
+            data-testid="llm-model-input"
+            isRequired
+            isVirtualized={false}
+            isLoading={isLoadingModels}
+            name="llm-model-input"
+            aria-label={t(I18nKey.LLM$MODEL)}
+            placeholder={t(I18nKey.LLM$SELECT_MODEL_PLACEHOLDER)}
+            isClearable={false}
+            onSelectionChange={(e) => {
+              if (e?.toString()) handleChangeModel(e.toString());
+            }}
+            isDisabled={isDisabled || !selectedProvider}
+            selectedKey={selectedModel}
+            defaultSelectedKey={selectedModel ?? undefined}
+            classNames={{
+              popoverContent: "bg-tertiary rounded-xl border border-[#717888]",
+            }}
+            inputProps={{
+              classNames: {
+                inputWrapper:
+                  "bg-tertiary border border-[#717888] h-10 w-full rounded-sm p-2 placeholder:italic",
+              },
+            }}
+          >
+            <AutocompleteSection title={t(I18nKey.MODEL_SELECTOR$VERIFIED)}>
+              {verifiedModels.map((model) => (
+                <AutocompleteItem key={model.name}>
                   {model.name}
                 </AutocompleteItem>
               ))}
             </AutocompleteSection>
-          ) : null}
-        </Autocomplete>
-        {modelsError && (
-          <p data-testid="models-error" className="text-danger text-xs">
-            {t(I18nKey.CONFIGURATION$ERROR_FETCH_MODELS)}
-          </p>
-        )}
-      </fieldset>
+            {unverifiedModels.length > 0 ? (
+              <AutocompleteSection title={t(I18nKey.MODEL_SELECTOR$OTHERS)}>
+                {unverifiedModels.map((model) => (
+                  <AutocompleteItem
+                    data-testid={`model-item-${model.name}`}
+                    key={model.name}
+                  >
+                    {model.name}
+                  </AutocompleteItem>
+                ))}
+              </AutocompleteSection>
+            ) : null}
+          </Autocomplete>
+          {modelsError && (
+            <p data-testid="models-error" className="text-danger text-xs">
+              {t(I18nKey.CONFIGURATION$ERROR_FETCH_MODELS)}
+            </p>
+          )}
+        </fieldset>
+      ) : null}
     </div>
   );
 }

@@ -120,6 +120,44 @@ class TestGetAuthUrl:
             assert result is None
 
 
+class TestGetManagedLiteLlmBaseUrl:
+    """Test cases for _get_managed_litellm_base_url helper function."""
+
+    def test_returns_env_var_when_set(self):
+        """When LITE_LLM_API_URL is set, return that value."""
+        from openhands.app_server.web_client.default_web_client_config_injector import (
+            _get_managed_litellm_base_url,
+        )
+
+        with patch.dict(
+            os.environ, {'LITE_LLM_API_URL': 'http://openhands-litellm:4000'}
+        ):
+            result = _get_managed_litellm_base_url()
+            assert result == 'http://openhands-litellm:4000'
+
+    def test_returns_none_when_env_var_unset(self):
+        """When LITE_LLM_API_URL is not set, return None."""
+        from openhands.app_server.web_client.default_web_client_config_injector import (
+            _get_managed_litellm_base_url,
+        )
+
+        with patch.dict(os.environ, {}, clear=True):
+            result = _get_managed_litellm_base_url()
+            assert result is None
+
+    def test_strips_whitespace_from_env_var(self):
+        """When LITE_LLM_API_URL has whitespace, strip it."""
+        from openhands.app_server.web_client.default_web_client_config_injector import (
+            _get_managed_litellm_base_url,
+        )
+
+        with patch.dict(
+            os.environ, {'LITE_LLM_API_URL': '  http://openhands-litellm:4000  '}
+        ):
+            result = _get_managed_litellm_base_url()
+            assert result == 'http://openhands-litellm:4000'
+
+
 class TestGetFeatureFlags:
     """Test cases for _get_feature_flags helper function."""
 
@@ -645,3 +683,34 @@ class TestGetSlackEnabled:
             clear=True,
         ):
             assert _get_slack_enabled() is False
+
+
+class TestGetAllowUserLlmConfiguration:
+    """Test cases for _get_allow_user_llm_configuration helper function."""
+
+    def test_defaults_to_true_when_env_var_is_unset(self):
+        """User LLM configuration stays enabled unless explicitly disabled."""
+        from openhands.app_server.web_client.default_web_client_config_injector import (
+            _get_allow_user_llm_configuration,
+        )
+
+        with patch.dict(os.environ, {}, clear=True):
+            assert _get_allow_user_llm_configuration() is True
+
+    def test_returns_true_for_truthy_env_var(self):
+        """KOTS can explicitly enable user-configured LLM providers."""
+        from openhands.app_server.web_client.default_web_client_config_injector import (
+            _get_allow_user_llm_configuration,
+        )
+
+        with patch.dict(os.environ, {'OH_ALLOW_USER_LLM_CONFIGURATION': 'true'}):
+            assert _get_allow_user_llm_configuration() is True
+
+    def test_returns_false_for_false_env_var(self):
+        """KOTS can disable user-configured LLM providers for governed OHE installs."""
+        from openhands.app_server.web_client.default_web_client_config_injector import (
+            _get_allow_user_llm_configuration,
+        )
+
+        with patch.dict(os.environ, {'OH_ALLOW_USER_LLM_CONFIGURATION': 'false'}):
+            assert _get_allow_user_llm_configuration() is False

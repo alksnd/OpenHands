@@ -54,6 +54,10 @@ export interface WebClientConfig {
   gitlab_enabled?: boolean;
   provider_default_hosts?: Partial<Record<Provider, string>>;
   slack_enabled?: boolean;
+  /** Bundled/managed LiteLLM proxy URL; treated as a provider default. */
+  managed_litellm_base_url?: string | null;
+  /** Whether users may configure providers outside the managed/default list. */
+  allow_user_llm_configuration?: boolean;
   acp_providers?: ACPProviderConfig[];
   /** Jira DC host when DC OAuth is configured; used to pre-fill + lock the
    *  configure form's host field. Null/absent in email-match mode. */
