@@ -417,6 +417,36 @@ async def test_delete_nonexistent_custom_secret(test_client, file_secrets_store)
 
 
 @pytest.mark.asyncio
+async def test_update_nonexistent_custom_secret(test_client, file_secrets_store):
+    """Updating a secret that doesn't exist must surface as 404, matching the
+    documented response contract and the sibling delete endpoint's behaviour."""
+    custom_secrets = {
+        'API_KEY': CustomSecret(secret=SecretStr('api-key-value'), description='')
+    }
+    provider_tokens = {
+        ProviderType.GITHUB: ProviderToken(token=SecretStr('github-token'))
+    }
+    user_secrets = Secrets(
+        custom_secrets=custom_secrets, provider_tokens=provider_tokens
+    )
+
+    await file_secrets_store.store(user_secrets)
+
+    update_secret_data = {
+        'name': 'NONEXISTENT_KEY',
+        'description': 'should never be applied',
+    }
+    response = test_client.put('/secrets/NONEXISTENT_KEY', json=update_secret_data)
+    assert response.status_code == 404
+    assert 'NONEXISTENT_KEY' in response.json().get('detail', '')
+
+    stored_settings = await file_secrets_store.load()
+    assert 'API_KEY' in stored_settings.custom_secrets
+    assert 'NONEXISTENT_KEY' not in stored_settings.custom_secrets
+    assert ProviderType.GITHUB in stored_settings.provider_tokens
+
+
+@pytest.mark.asyncio
 async def test_add_git_providers_with_host(test_client, file_secrets_store):
     """Test adding git providers with host parameter."""
     # Create initial user secrets
