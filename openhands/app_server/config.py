@@ -94,7 +94,7 @@ def get_default_web_url() -> str | None:
 
     If present, we assume we are running under https.
     """
-    web_host = os.getenv('WEB_HOST')
+    web_host = os.getenv('WEB_HOST', '').strip()
     if not web_host:
         return None
     return f'https://{web_host}'
@@ -118,7 +118,12 @@ def get_openhands_provider_base_url() -> str | None:
 
     Falls back to LLM_BASE_URL for backward compatibility.
     """
-    return os.getenv('OPENHANDS_PROVIDER_BASE_URL') or os.getenv('LLM_BASE_URL') or None
+    base_url = os.getenv('OPENHANDS_PROVIDER_BASE_URL', '').strip()
+    if base_url:
+        return base_url
+
+    fallback_base_url = os.getenv('LLM_BASE_URL', '').strip()
+    return fallback_base_url or None
 
 
 def get_default_tavily_api_key() -> str | None:
