@@ -2482,4 +2482,18 @@ describe("LlmSettingsScreen", () => {
       expect(ProfilesService.activateProfile).not.toHaveBeenCalled();
     });
   });
+
+  it("shows OpenAI-compatible provider help text in advanced settings", async () => {
+    vi.spyOn(SettingsService, "getSettings").mockResolvedValue(buildSettings());
+
+    await renderLlmSettingsScreen({ appMode: "oss" });
+
+    await screen.findByTestId("llm-settings-screen");
+    await userEvent.click(screen.getByTestId("sdk-section-advanced-toggle"));
+    const advancedForm = await screen.findByTestId("llm-settings-form-advanced");
+
+    const help = within(advancedForm).getByTestId("llm-openai-compatible-help");
+    expect(help).toHaveTextContent("SETTINGS$OPENAI_COMPATIBLE_MODEL_HELP");
+    expect(help).toHaveTextContent("SETTINGS$OPENAI_COMPATIBLE_BASE_URL_HELP");
+  });
 });

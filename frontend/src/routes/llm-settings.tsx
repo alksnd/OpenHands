@@ -369,6 +369,13 @@ export function LlmSettingsScreen({
                 onChange={(value) => onChange("llm.base_url", value)}
                 isDisabled={isDisabled}
               />
+              <div
+                data-testid="llm-openai-compatible-help"
+                className="w-full max-w-[680px] text-xs text-tertiary-alt space-y-2"
+              >
+                <p>{t(I18nKey.SETTINGS$OPENAI_COMPATIBLE_MODEL_HELP)}</p>
+                <p>{t(I18nKey.SETTINGS$OPENAI_COMPATIBLE_BASE_URL_HELP)}</p>
+              </div>
 
               {renderApiKeyInput(
                 "llm-api-key-input",
