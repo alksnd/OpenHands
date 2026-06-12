@@ -1,7 +1,7 @@
 import React from "react";
 import { useTranslation } from "react-i18next";
 import { BrandButton } from "#/components/features/settings/brand-button";
-import { LoadingSpinner } from "#/components/shared/loading-spinner";
+import { Spinner } from "#/components/shared/spinner";
 import { I18nKey } from "#/i18n/declaration";
 import { cn } from "#/utils/utils";
 
@@ -45,12 +45,7 @@ export function ModalButtonGroup({
         isDisabled={isLoading}
       >
         {isLoading ? (
-          <LoadingSpinner
-            size="small"
-            className="w-5 h-5"
-            innerClassName="hidden"
-            outerClassName="w-5 h-5"
-          />
+          <Spinner size="md" className="text-white" testId="loading-spinner" />
         ) : (
           primaryText
         )}
