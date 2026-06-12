@@ -110,6 +110,10 @@ dependencies = [
 urls.Homepage = "https://github.com/OpenHands/OpenHands"
 urls.Repository = "https://github.com/OpenHands/OpenHands"
 
+[tool.uv]
+exclude-newer = "7 days"
+exclude-newer-package = { openhands-aci = "0 days", openhands-agent-server = "0 days", openhands-sdk = "0 days", openhands-tools = "0 days" }
+
 [dependency-groups]
 dev = [
   "build",
