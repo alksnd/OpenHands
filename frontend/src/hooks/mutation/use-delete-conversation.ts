@@ -1,6 +1,10 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import V1ConversationService from "#/api/conversation-service/v1-conversation-service.api";
 import { clearConversationLocalStorage } from "#/utils/conversation-local-storage";
+import {
+  removeConversationsFromCache,
+  restoreConversationsCache,
+} from "./conversation-mutation-utils";
 
 export const useDeleteConversation = () => {
   const queryClient = useQueryClient();
@@ -10,36 +14,21 @@ export const useDeleteConversation = () => {
       V1ConversationService.deleteConversation(variables.conversationId),
     onMutate: async (variables) => {
       await queryClient.cancelQueries({ queryKey: ["user", "conversations"] });
-      const previousConversations = queryClient.getQueryData([
-        "user",
-        "conversations",
+      const previousData = removeConversationsFromCache(queryClient, [
+        variables.conversationId,
       ]);
-
-      queryClient.setQueryData(
-        ["user", "conversations"],
-        (old: { conversation_id: string }[] | undefined) =>
-          old?.filter(
-            (conv) => conv.conversation_id !== variables.conversationId,
-          ),
-      );
-
-      return { previousConversations };
+      return { previousData };
     },
-
     onSuccess: (_, variables) => {
       clearConversationLocalStorage(variables.conversationId);
     },
-
-    onError: (err, variables, context) => {
-      if (context?.previousConversations) {
-        queryClient.setQueryData(
-          ["user", "conversations"],
-          context.previousConversations,
-        );
+    onError: (_err, _variables, context) => {
+      if (context?.previousData) {
+        restoreConversationsCache(queryClient, context.previousData);
       }
-    },
-    onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: ["user", "conversations"] });
+      queryClient.invalidateQueries({
+        queryKey: ["user", "conversations"],
+      });
     },
   });
 };

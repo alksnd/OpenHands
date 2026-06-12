@@ -6,6 +6,7 @@ import { usePaginatedConversations } from "#/hooks/query/use-paginated-conversat
 import { useStartTasks } from "#/hooks/query/use-start-tasks";
 import { useInfiniteScroll } from "#/hooks/use-infinite-scroll";
 import { useDeleteConversation } from "#/hooks/mutation/use-delete-conversation";
+import { useBulkDeleteConversations } from "#/hooks/mutation/use-bulk-delete-conversations";
 import { useUnifiedPauseConversationSandbox } from "#/hooks/mutation/use-unified-stop-conversation";
 import { ConfirmDeleteModal } from "./confirm-delete-modal";
 import { ConfirmStopModal } from "./confirm-stop-modal";
@@ -51,6 +52,9 @@ export function ConversationPanel({ onClose }: ConversationPanelProps) {
   const [openContextMenuId, setOpenContextMenuId] = React.useState<
     string | null
   >(null);
+  const [selectedIds, setSelectedIds] = React.useState<Set<string>>(new Set());
+  const [confirmBulkDeleteModalVisible, setConfirmBulkDeleteModalVisible] =
+    React.useState(false);
 
   const {
     data,
@@ -68,6 +72,7 @@ export function ConversationPanel({ onClose }: ConversationPanelProps) {
   const conversations = data?.pages.flatMap((page) => page.items) ?? [];
 
   const { mutate: deleteConversation } = useDeleteConversation();
+  const { mutate: bulkDeleteConversations } = useBulkDeleteConversations();
   const { mutate: pauseConversationSandbox } =
     useUnifiedPauseConversationSandbox();
   const { mutate: updateConversation } = useUpdateConversation();
@@ -109,6 +114,48 @@ export function ConversationPanel({ onClose }: ConversationPanelProps) {
     );
   };
 
+  const toggleSelection = (conversationId: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(conversationId)) {
+        next.delete(conversationId);
+      } else {
+        next.add(conversationId);
+      }
+      return next;
+    });
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedIds.size === conversations.length) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(conversations.map((c) => c.id)));
+    }
+  };
+
+  const handleBulkDelete = () => {
+    if (selectedIds.size > 0) {
+      setConfirmBulkDeleteModalVisible(true);
+    }
+  };
+
+  const handleConfirmBulkDelete = () => {
+    const ids = Array.from(selectedIds);
+    setSelectedIds(new Set());
+    setConfirmBulkDeleteModalVisible(false);
+    bulkDeleteConversations(
+      { conversationIds: ids },
+      {
+        onSuccess: () => {
+          if (currentConversationId && ids.includes(currentConversationId)) {
+            navigate("/");
+          }
+        },
+      },
+    );
+  };
+
   const handleConfirmDelete = () => {
     if (selectedConversationId) {
       deleteConversation(
@@ -143,6 +190,38 @@ export function ConversationPanel({ onClose }: ConversationPanelProps) {
       data-testid="conversation-panel"
       className="w-full md:w-[400px] h-full border border-[#525252] bg-[#25272D] rounded-lg overflow-y-auto absolute custom-scrollbar-always"
     >
+      {/* Bulk action bar — appears when ≥1 selected */}
+      {selectedIds.size > 0 && (
+        <div
+          className="sticky top-0 z-10 bg-[#25272D] border-b border-neutral-600 px-3.5 py-2 flex items-center justify-between"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <label className="flex items-center gap-2 text-sm text-neutral-300 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={
+                conversations.length > 0 &&
+                selectedIds.size === conversations.length
+              }
+              onChange={toggleSelectAll}
+              className="w-4 h-4 cursor-pointer"
+              data-testid="select-all-checkbox"
+            />
+            {t(I18nKey.CONVERSATION$SELECT_ALL)}
+          </label>
+          <button
+            type="button"
+            onClick={handleBulkDelete}
+            className="text-sm text-red-400 hover:text-red-300 cursor-pointer"
+            data-testid="bulk-delete-button"
+          >
+            {t(I18nKey.CONVERSATION$DELETE_SELECTED, {
+              count: selectedIds.size,
+            })}
+          </button>
+        </div>
+      )}
+
       {isFetching && conversations.length === 0 && (
         <div className="space-y-2">
           {Array.from({ length: 5 }).map((_, index) => (
@@ -210,6 +289,8 @@ export function ConversationPanel({ onClose }: ConversationPanelProps) {
               conversation.tags,
               config?.acp_providers,
             )}
+            isSelected={selectedIds.has(conversation.id)}
+            onSelectionToggle={() => toggleSelection(conversation.id)}
           />
         </NavLink>
       ))}
@@ -254,6 +335,17 @@ export function ConversationPanel({ onClose }: ConversationPanelProps) {
           }}
           onClose={() => setConfirmExitConversationModalVisible(false)}
           onCancel={() => setConfirmExitConversationModalVisible(false)}
+        />
+      )}
+
+      {confirmBulkDeleteModalVisible && (
+        <ConfirmDeleteModal
+          onConfirm={handleConfirmBulkDelete}
+          onCancel={() => setConfirmBulkDeleteModalVisible(false)}
+          bulkCount={selectedIds.size}
+          bulkTitles={conversations
+            .filter((c) => selectedIds.has(c.id))
+            .map((c) => c.title ?? "Untitled")}
         />
       )}
     </div>

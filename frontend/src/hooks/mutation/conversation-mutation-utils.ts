@@ -170,3 +170,49 @@ export const invalidateConversationQueries = (
   queryClient.invalidateQueries({ queryKey: ["sandboxes"] });
   queryClient.invalidateQueries({ queryKey: ["unified", "vscode_url"] });
 };
+
+/**
+ * Optimistically removes conversations from the paginated cache.
+ * Returns a snapshot of the previous data for rollback on error.
+ */
+export const removeConversationsFromCache = (
+  queryClient: QueryClient,
+  conversationIds: string[],
+): Map<readonly unknown[], unknown> => {
+  const idsToRemove = new Set(conversationIds);
+
+  const previousData = new Map<readonly unknown[], unknown>();
+
+  queryClient.setQueriesData<{
+    pages: Array<{
+      items: Array<{ id: string }>;
+    }>;
+  }>({ queryKey: ["user", "conversations"] }, (oldData) => {
+    if (!oldData) return oldData;
+
+    // Save snapshot before mutation
+    previousData.set(["user", "conversations"], oldData);
+
+    return {
+      ...oldData,
+      pages: oldData.pages.map((page) => ({
+        ...page,
+        items: page.items.filter((conv) => !idsToRemove.has(conv.id)),
+      })),
+    };
+  });
+
+  return previousData;
+};
+
+/**
+ * Restores the conversations cache from a previous snapshot.
+ */
+export const restoreConversationsCache = (
+  queryClient: QueryClient,
+  previousData: Map<readonly unknown[], unknown>,
+): void => {
+  for (const [key, data] of previousData) {
+    queryClient.setQueryData(key, data);
+  }
+};

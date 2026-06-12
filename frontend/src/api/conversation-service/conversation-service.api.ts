@@ -63,6 +63,18 @@ class ConversationService {
     return data;
   }
 
+  static async bulkDeleteConversations(
+    conversationIds: string[],
+  ): Promise<{ succeeded: string[]; failed: string[] }> {
+    const { data } = await openHands.post<{
+      succeeded: string[];
+      failed: string[];
+    }>("/api/v1/app-conversations/bulk-delete", {
+      conversation_ids: conversationIds,
+    });
+    return data;
+  }
+
   static async getTrajectory(
     conversationId: string,
   ): Promise<GetTrajectoryResponse> {

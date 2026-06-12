@@ -12,24 +12,35 @@ interface ConfirmDeleteModalProps {
   onConfirm: () => void;
   onCancel: () => void;
   conversationTitle?: string;
+  bulkCount?: number;
+  bulkTitles?: string[];
 }
 
 export function ConfirmDeleteModal({
   onConfirm,
   onCancel,
   conversationTitle,
+  bulkCount,
+  bulkTitles,
 }: ConfirmDeleteModalProps) {
   const { t } = useTranslation();
 
-  const confirmationMessage = conversationTitle ? (
-    <Trans
-      i18nKey={I18nKey.CONVERSATION$DELETE_WARNING_WITH_TITLE}
-      values={{ title: conversationTitle }}
-      components={{ title: <span className="text-white" /> }}
-    />
-  ) : (
-    t(I18nKey.CONVERSATION$DELETE_WARNING)
-  );
+  let confirmationMessage: React.ReactNode;
+  if (bulkCount && bulkCount > 1) {
+    confirmationMessage = t(I18nKey.CONVERSATION$BULK_DELETE_WARNING, {
+      count: bulkCount,
+    });
+  } else if (conversationTitle) {
+    confirmationMessage = (
+      <Trans
+        i18nKey={I18nKey.CONVERSATION$DELETE_WARNING_WITH_TITLE}
+        values={{ title: conversationTitle }}
+        components={{ title: <span className="text-white" /> }}
+      />
+    );
+  } else {
+    confirmationMessage = t(I18nKey.CONVERSATION$DELETE_WARNING);
+  }
 
   return (
     <ModalBackdrop onClose={onCancel}>
@@ -37,6 +48,18 @@ export function ConfirmDeleteModal({
         <div className="flex flex-col gap-2">
           <BaseModalTitle title={t(I18nKey.CONVERSATION$CONFIRM_DELETE)} />
           <BaseModalDescription>{confirmationMessage}</BaseModalDescription>
+          {bulkTitles && bulkTitles.length > 0 && (
+            <div
+              className="max-h-40 overflow-y-auto text-xs text-white"
+              data-testid="bulk-delete-titles"
+            >
+              {bulkTitles.map((title, i) => (
+                <div key={i} className="truncate">
+                  {i + 1}. <span className="text-white">{title}</span>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
         <div
           className="flex flex-col gap-2 w-full"

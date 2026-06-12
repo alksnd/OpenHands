@@ -6,6 +6,7 @@ import React from "react";
 import { renderWithProviders } from "test-utils";
 import { ConversationPanel } from "#/components/features/conversation-panel/conversation-panel";
 import V1ConversationService from "#/api/conversation-service/v1-conversation-service.api";
+import ConversationService from "#/api/conversation-service/conversation-service.api";
 import { V1AppConversation } from "#/api/conversation-service/v1-conversation-service.types";
 import { V1SandboxStatus } from "#/api/sandbox-service/sandbox-service.types";
 import { V1ExecutionStatus } from "#/types/v1/core";
@@ -799,5 +800,152 @@ describe("ConversationPanel", () => {
     expect(
       screen.queryByRole("button", { name: /confirm/i }),
     ).not.toBeInTheDocument();
+  });
+
+  it("should render checkboxes on all conversation cards", async () => {
+    renderConversationPanel();
+
+    const checkboxes = await screen.findAllByTestId(
+      "conversation-select-checkbox",
+    );
+    expect(checkboxes).toHaveLength(3);
+  });
+
+  it("should not show bulk action bar when no conversations are selected", async () => {
+    renderConversationPanel();
+
+    await screen.findAllByTestId("conversation-card");
+    expect(screen.queryByTestId("bulk-delete-button")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("select-all-checkbox")).not.toBeInTheDocument();
+  });
+
+  it("should show bulk action bar when a conversation is selected", async () => {
+    const user = userEvent.setup();
+    renderConversationPanel();
+
+    const checkboxes = await screen.findAllByTestId(
+      "conversation-select-checkbox",
+    );
+    await user.click(checkboxes[0]);
+
+    expect(screen.getByTestId("bulk-delete-button")).toBeInTheDocument();
+    expect(screen.getByTestId("select-all-checkbox")).toBeInTheDocument();
+  });
+
+  it("should select all conversations when select all is clicked", async () => {
+    const user = userEvent.setup();
+    renderConversationPanel();
+
+    // Select one to make the bar appear
+    const checkboxes = await screen.findAllByTestId(
+      "conversation-select-checkbox",
+    );
+    await user.click(checkboxes[0]);
+
+    // Click select all
+    const selectAll = screen.getByTestId("select-all-checkbox");
+    await user.click(selectAll);
+
+    // All card checkboxes should be checked
+    const updatedCheckboxes = screen.getAllByTestId(
+      "conversation-select-checkbox",
+    );
+    updatedCheckboxes.forEach((cb) => {
+      expect((cb as HTMLInputElement).checked).toBe(true);
+    });
+  });
+
+  it("should deselect all when select all is clicked twice", async () => {
+    const user = userEvent.setup();
+    renderConversationPanel();
+
+    // Select one to show bar
+    const checkboxes = await screen.findAllByTestId(
+      "conversation-select-checkbox",
+    );
+    await user.click(checkboxes[0]);
+
+    // Select all
+    const selectAll = screen.getByTestId("select-all-checkbox");
+    await user.click(selectAll);
+
+    // Deselect all
+    await user.click(selectAll);
+
+    // Bulk bar should disappear
+    expect(screen.queryByTestId("bulk-delete-button")).not.toBeInTheDocument();
+  });
+
+  it("should bulk delete selected conversations", async () => {
+    const user = userEvent.setup();
+
+    const mockData: V1AppConversation[] = [...mockConversations];
+
+    vi.spyOn(V1ConversationService, "searchConversations").mockImplementation(
+      async () => ({
+        items: mockData,
+        next_page_id: null,
+      }),
+    );
+
+    const bulkDeleteSpy = vi.spyOn(
+      ConversationService,
+      "bulkDeleteConversations",
+    );
+    bulkDeleteSpy.mockImplementation(async (ids: string[]) => {
+      for (const id of ids) {
+        const index = mockData.findIndex((conv) => conv.id === id);
+        if (index !== -1) {
+          mockData.splice(index, 1);
+        }
+      }
+      return { succeeded: ids, failed: [] };
+    });
+
+    renderConversationPanel();
+
+    // Select first two conversations
+    const checkboxes = await screen.findAllByTestId(
+      "conversation-select-checkbox",
+    );
+    await user.click(checkboxes[0]);
+    await user.click(checkboxes[1]);
+
+    // Click bulk delete
+    const bulkDeleteButton = screen.getByTestId("bulk-delete-button");
+    await user.click(bulkDeleteButton);
+
+    // Confirm
+    const confirmButton = screen.getByRole("button", { name: /confirm/i });
+    await user.click(confirmButton);
+
+    // Should have called bulk delete with both IDs
+    expect(bulkDeleteSpy).toHaveBeenCalledTimes(1);
+
+    // Bulk bar should disappear after deletion
+    expect(screen.queryByTestId("bulk-delete-button")).not.toBeInTheDocument();
+  });
+
+  it("should cancel bulk delete", async () => {
+    const user = userEvent.setup();
+    renderConversationPanel();
+
+    const checkboxes = await screen.findAllByTestId(
+      "conversation-select-checkbox",
+    );
+    await user.click(checkboxes[0]);
+
+    const bulkDeleteButton = screen.getByTestId("bulk-delete-button");
+    await user.click(bulkDeleteButton);
+
+    // Cancel
+    const cancelButton = screen.getByRole("button", { name: /cancel/i });
+    await user.click(cancelButton);
+
+    // Modal should close but selection should remain
+    expect(
+      screen.queryByRole("button", { name: /confirm/i }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByTestId("bulk-delete-button")).toBeInTheDocument();
   });
 });
