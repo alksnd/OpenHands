@@ -2,20 +2,24 @@ import asyncio
 import hashlib
 import hmac
 import os
+from typing import cast
 
-from fastapi import APIRouter, BackgroundTasks, Header, HTTPException, Request
+from fastapi import APIRouter, BackgroundTasks, Header, HTTPException, Request, status
 from fastapi.responses import JSONResponse
 from integrations.github.data_collector import GitHubDataCollector
 from integrations.github.github_manager import GithubManager
 from integrations.models import Message, SourceType
+from pydantic import BaseModel
 from server.auth.constants import (
     AUTOMATION_EVENT_FORWARDING_ENABLED,
     GITHUB_APP_WEBHOOK_SECRET,
 )
+from server.auth.saas_user_auth import SaasUserAuth
 from server.auth.token_manager import TokenManager
 from server.services.automation_event_service import AutomationEventService
 
 from openhands.app_server.integrations.provider import ProviderType
+from openhands.app_server.user_auth.user_auth import get_user_auth
 from openhands.app_server.utils.logger import openhands_logger as logger
 
 # Environment variable to disable GitHub webhooks
@@ -105,3 +109,42 @@ async def github_events(
     except Exception as e:
         logger.exception(f'Error processing GitHub event: {e}')
         return JSONResponse(status_code=400, content={'error': 'Invalid payload.'})
+
+
+class GitHubTokenResponse(BaseModel):
+    """Response model for the GitHub token endpoint."""
+
+    access_token: str
+
+
+@github_integration_router.get('/github/token')
+async def get_github_token(request: Request) -> GitHubTokenResponse:
+    """Get the GitHub access token for the authenticated user.
+
+    This endpoint retrieves the user's GitHub OAuth token, refreshing it
+    if necessary. The token can be used for GitHub API operations.
+
+    Returns:
+        GitHubTokenResponse containing the access token.
+
+    Raises:
+        HTTPException 401: If the user is not authenticated.
+        HTTPException 404: If no GitHub token is available for the user.
+    """
+    user_auth = cast(SaasUserAuth, await get_user_auth(request))
+
+    provider_tokens = await user_auth.get_provider_tokens()
+    if not provider_tokens:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail='No provider tokens available for this user.',
+        )
+
+    github_token = provider_tokens.get(ProviderType.GITHUB)
+    if not github_token or not github_token.token:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail='No GitHub token available for this user.',
+        )
+
+    return GitHubTokenResponse(access_token=github_token.token.get_secret_value())
