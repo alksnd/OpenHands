@@ -34,6 +34,8 @@ import { useAppTitle } from "#/hooks/use-app-title";
 import { useInvitation } from "#/hooks/use-invitation";
 import { InvitationAcceptModal } from "#/components/features/invitations/invitation-accept-modal";
 import { useSwitchOrganization } from "#/hooks/mutation/use-switch-organization";
+import { ConversationLimitModal } from "#/components/features/org/conversation-limit-modal";
+import { useConversationLimitStore } from "#/stores/conversation-limit-store";
 
 export function ErrorBoundary() {
   const error = useRouteError();
@@ -92,6 +94,13 @@ export default function MainApp() {
   const { invitationToken, clearInvitation } = useInvitation();
   const { mutate: switchOrganization } = useSwitchOrganization();
   const [showInvitationModal, setShowInvitationModal] = React.useState(false);
+
+  // Conversation limit modal state
+  const {
+    isOpen: isConversationLimitModalOpen,
+    limit: conversationLimit,
+    closeLimitModal,
+  } = useConversationLimitStore();
 
   // Auto-login if login method is stored in local storage
   useAutoLogin();
@@ -300,6 +309,12 @@ export default function MainApp() {
           token={invitationToken}
           onClose={handleInvitationClose}
           onSuccess={handleInvitationSuccess}
+        />
+      )}
+      {isConversationLimitModalOpen && conversationLimit !== null && (
+        <ConversationLimitModal
+          onClose={closeLimitModal}
+          limit={conversationLimit}
         />
       )}
     </div>
