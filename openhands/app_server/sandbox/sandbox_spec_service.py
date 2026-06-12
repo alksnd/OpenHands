@@ -62,6 +62,12 @@ class SandboxSpecServiceInjector(
 
 
 def get_agent_server_image() -> str:
+    # Backward compatibility for docker-compose setups that still configure
+    # custom runtimes via the pre-V1 sandbox image variable.
+    sandbox_runtime_container_image = os.getenv('SANDBOX_RUNTIME_CONTAINER_IMAGE')
+    if sandbox_runtime_container_image:
+        return sandbox_runtime_container_image
+
     agent_server_image_repository = os.getenv('AGENT_SERVER_IMAGE_REPOSITORY')
     agent_server_image_tag = os.getenv('AGENT_SERVER_IMAGE_TAG')
     if agent_server_image_repository and agent_server_image_tag:
