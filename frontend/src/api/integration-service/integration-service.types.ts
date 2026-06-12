@@ -28,6 +28,41 @@ export interface ResourceInstallationResult {
   error: string | null;
 }
 
+export interface BitbucketResource {
+  workspace: string;
+  repo_slug: string;
+  name: string;
+  full_name: string;
+  type: "repository";
+  webhook_installed: boolean;
+  webhook_exists_on_provider: boolean;
+  webhook_uuid: string | null;
+  webhook_secret_set: boolean;
+  installed_by_user_id: string | null;
+  last_synced: string | null;
+}
+
+export interface BitbucketResourcesResponse {
+  resources: BitbucketResource[];
+}
+
+export interface BitbucketResourceIdentifier {
+  workspace: string;
+  repo_slug: string;
+}
+
+export interface BitbucketWebhookRequest {
+  resource: BitbucketResourceIdentifier;
+}
+
+export interface BitbucketWebhookInstallationResult {
+  workspace: string;
+  repo_slug: string;
+  success: boolean;
+  error: string | null;
+  webhook_uuid: string | null;
+}
+
 export interface BitbucketDCResource {
   project_key: string;
   repo_slug: string;

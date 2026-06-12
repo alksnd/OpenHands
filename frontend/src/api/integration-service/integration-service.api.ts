@@ -1,5 +1,8 @@
 import { openHands } from "../open-hands-axios";
 import {
+  BitbucketResourcesResponse,
+  BitbucketWebhookInstallationResult,
+  BitbucketResourceIdentifier,
   BitbucketDCResourcesResponse,
   BitbucketDCWebhookEnrollmentResult,
   BitbucketDCWebhookIdUpdateResult,
@@ -38,6 +41,46 @@ export const integrationService = {
     const { data } = await openHands.post<ResourceInstallationResult>(
       "/integration/gitlab/reinstall-webhook",
       requestBody,
+    );
+    return data;
+  },
+
+  /**
+   * Get all Bitbucket Cloud repositories where the user can manage resolver webhooks.
+   */
+  getBitbucketResources: async (): Promise<BitbucketResourcesResponse> => {
+    const { data } = await openHands.get<BitbucketResourcesResponse>(
+      "/integration/bitbucket/resources",
+    );
+    return data;
+  },
+
+  /**
+   * Create or repair a Bitbucket Cloud repository webhook.
+   */
+  reinstallBitbucketWebhook: async ({
+    resource,
+  }: {
+    resource: BitbucketResourceIdentifier;
+  }): Promise<BitbucketWebhookInstallationResult> => {
+    const { data } = await openHands.post<BitbucketWebhookInstallationResult>(
+      "/integration/bitbucket/reinstall-webhook",
+      { resource },
+    );
+    return data;
+  },
+
+  /**
+   * Remove the OpenHands Bitbucket Cloud repository webhook.
+   */
+  uninstallBitbucketWebhook: async ({
+    resource,
+  }: {
+    resource: BitbucketResourceIdentifier;
+  }): Promise<BitbucketWebhookInstallationResult> => {
+    const { data } = await openHands.post<BitbucketWebhookInstallationResult>(
+      "/integration/bitbucket/uninstall-webhook",
+      { resource },
     );
     return data;
   },

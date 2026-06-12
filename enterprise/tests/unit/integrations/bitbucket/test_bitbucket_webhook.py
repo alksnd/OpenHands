@@ -7,7 +7,16 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi import HTTPException
-from server.routes.integration.bitbucket import bitbucket_events
+from server.routes.integration.bitbucket import (
+    BitbucketResourceIdentifier,
+    BitbucketWebhookRequest,
+    bitbucket_events,
+    get_bitbucket_resources,
+    reinstall_bitbucket_webhook,
+    uninstall_bitbucket_webhook,
+)
+
+from openhands.app_server.integrations.service_types import ProviderType, Repository
 
 
 def _signed(body: bytes, secret: str = 'shared-secret') -> str:
@@ -130,3 +139,151 @@ async def test_valid_event_dispatches_to_manager_and_returns_200(
     assert dispatched.source.value == 'bitbucket'
     assert dispatched.message['event_key'] == 'pullrequest:comment_created'
     assert response.status_code == 200
+
+
+@pytest.mark.asyncio
+@patch('server.routes.integration.bitbucket.webhook_store')
+@patch('server.routes.integration.bitbucket.SaaSBitBucketService')
+async def test_get_bitbucket_resources_lists_admin_repos_with_status(
+    mock_service_cls, mock_store
+):
+    service = MagicMock()
+    service.get_all_repositories = AsyncMock(
+        return_value=[
+            Repository(
+                id='{repo-1}',
+                full_name='acme/repo-1',
+                git_provider=ProviderType.BITBUCKET,
+                is_public=False,
+            ),
+            Repository(
+                id='{repo-2}',
+                full_name='acme/repo-2',
+                git_provider=ProviderType.BITBUCKET,
+                is_public=False,
+            ),
+        ]
+    )
+    service.user_has_admin_access = AsyncMock(side_effect=[True, False])
+    service.check_webhook_exists_on_repository = AsyncMock(
+        return_value=(True, '{hook-1}')
+    )
+    mock_service_cls.return_value = service
+
+    webhook = MagicMock()
+    webhook.webhook_uuid = '{hook-1}'
+    webhook.webhook_secret = 'shared-secret'
+    webhook.user_id = 'kc-installer'
+    webhook.last_synced = None
+    mock_store.get_webhooks_by_repos = AsyncMock(
+        return_value={('acme', 'repo-1'): webhook}
+    )
+
+    response = await get_bitbucket_resources(user_id='kc-user')
+
+    assert len(response.resources) == 1
+    assert response.resources[0].full_name == 'acme/repo-1'
+    assert response.resources[0].webhook_installed is True
+    assert response.resources[0].webhook_exists_on_provider is True
+    mock_store.get_webhooks_by_repos.assert_awaited_once_with([('acme', 'repo-1')])
+
+
+@pytest.mark.asyncio
+@patch('server.routes.integration.bitbucket.secrets.token_urlsafe')
+@patch('server.routes.integration.bitbucket.webhook_store')
+@patch('server.routes.integration.bitbucket.SaaSBitBucketService')
+async def test_reinstall_bitbucket_webhook_updates_provider_and_store(
+    mock_service_cls, mock_store, mock_token_urlsafe
+):
+    mock_token_urlsafe.return_value = 'generated-secret'
+    service = MagicMock()
+    service.user_has_admin_access = AsyncMock(return_value=True)
+    service.check_webhook_exists_on_repository = AsyncMock(
+        return_value=(True, '{hook-1}')
+    )
+    service.update_repository_webhook = AsyncMock(return_value='{hook-1}')
+    service.create_repository_webhook = AsyncMock()
+    mock_service_cls.return_value = service
+    mock_store.upsert_webhook_enrollment = AsyncMock()
+
+    response = await reinstall_bitbucket_webhook(
+        body=BitbucketWebhookRequest(
+            resource=BitbucketResourceIdentifier(
+                workspace='acme',
+                repo_slug='repo-1',
+            )
+        ),
+        user_id='kc-user',
+    )
+
+    assert response.success is True
+    assert response.webhook_uuid == '{hook-1}'
+    service.update_repository_webhook.assert_awaited_once()
+    service.create_repository_webhook.assert_not_called()
+    mock_store.upsert_webhook_enrollment.assert_awaited_once_with(
+        workspace='acme',
+        repo_slug='repo-1',
+        user_id='kc-user',
+        webhook_uuid='{hook-1}',
+        webhook_secret='generated-secret',
+    )
+
+
+@pytest.mark.asyncio
+@patch('server.routes.integration.bitbucket.SaaSBitBucketService')
+async def test_reinstall_bitbucket_webhook_rejects_non_admin(mock_service_cls):
+    service = MagicMock()
+    service.user_has_admin_access = AsyncMock(return_value=False)
+    mock_service_cls.return_value = service
+
+    with pytest.raises(HTTPException) as exc:
+        await reinstall_bitbucket_webhook(
+            body=BitbucketWebhookRequest(
+                resource=BitbucketResourceIdentifier(
+                    workspace='acme',
+                    repo_slug='repo-1',
+                )
+            ),
+            user_id='kc-user',
+        )
+
+    assert exc.value.status_code == 403
+
+
+@pytest.mark.asyncio
+@patch('server.routes.integration.bitbucket.webhook_store')
+@patch('server.routes.integration.bitbucket.SaaSBitBucketService')
+async def test_uninstall_bitbucket_webhook_deletes_provider_and_store(
+    mock_service_cls, mock_store
+):
+    service = MagicMock()
+    service.user_has_admin_access = AsyncMock(return_value=True)
+    service.check_webhook_exists_on_repository = AsyncMock(
+        return_value=(True, '{hook-1}')
+    )
+    service.delete_repository_webhook = AsyncMock()
+    mock_service_cls.return_value = service
+
+    webhook = MagicMock()
+    webhook.webhook_uuid = '{hook-1}'
+    mock_store.get_webhook_by_repo = AsyncMock(return_value=webhook)
+    mock_store.delete_webhook_by_repo = AsyncMock(return_value=True)
+
+    response = await uninstall_bitbucket_webhook(
+        body=BitbucketWebhookRequest(
+            resource=BitbucketResourceIdentifier(
+                workspace='acme',
+                repo_slug='repo-1',
+            )
+        ),
+        user_id='kc-user',
+    )
+
+    assert response.success is True
+    service.delete_repository_webhook.assert_awaited_once_with(
+        'acme', 'repo-1', '{hook-1}'
+    )
+    mock_store.delete_webhook_by_repo.assert_awaited_once_with(
+        workspace='acme',
+        repo_slug='repo-1',
+    )

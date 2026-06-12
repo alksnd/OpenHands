@@ -123,6 +123,44 @@ class TestHTTPClient:
         assert result == mock_response
         mock_client.post.assert_called_once_with(url, headers=headers, json=params)
 
+    async def test_execute_request_put(self):
+        """Test execute_request with PUT method."""
+        client = TestableHTTPClient()
+
+        mock_client = AsyncMock()
+        mock_response = AsyncMock()
+        mock_client.put.return_value = mock_response
+
+        url = 'https://api.example.com/hooks/123'
+        headers = {'Authorization': 'Bearer token'}
+        params = {'active': True}
+
+        result = await client.execute_request(
+            mock_client, url, headers, params, RequestMethod.PUT
+        )
+
+        assert result == mock_response
+        mock_client.put.assert_called_once_with(url, headers=headers, json=params)
+
+    async def test_execute_request_delete(self):
+        """Test execute_request with DELETE method."""
+        client = TestableHTTPClient()
+
+        mock_client = AsyncMock()
+        mock_response = AsyncMock()
+        mock_client.delete.return_value = mock_response
+
+        url = 'https://api.example.com/hooks/123'
+        headers = {'Authorization': 'Bearer token'}
+        params = {'dry_run': False}
+
+        result = await client.execute_request(
+            mock_client, url, headers, params, RequestMethod.DELETE
+        )
+
+        assert result == mock_response
+        mock_client.delete.assert_called_once_with(url, headers=headers, params=params)
+
     def test_handle_http_status_error_401(self):
         """Test handling of 401 HTTP status error."""
         client = TestableHTTPClient('github')

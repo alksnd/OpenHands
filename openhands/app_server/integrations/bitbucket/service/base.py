@@ -124,6 +124,8 @@ class BitBucketMixinBase(BaseGitService, HTTPClient):
                         method=method,
                     )
                 response.raise_for_status()
+                if response.status_code == 204 or not response.content:
+                    return {}, dict(response.headers)
                 return response.json(), dict(response.headers)
         except httpx.HTTPStatusError as e:
             raise self.handle_http_status_error(e)

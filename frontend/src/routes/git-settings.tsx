@@ -9,6 +9,7 @@ import { GitHubTokenInput } from "#/components/features/settings/git-settings/gi
 import { GitLabTokenInput } from "#/components/features/settings/git-settings/gitlab-token-input";
 import { GitLabWebhookManager } from "#/components/features/settings/git-settings/gitlab-webhook-manager";
 import { BitbucketTokenInput } from "#/components/features/settings/git-settings/bitbucket-token-input";
+import { BitbucketWebhookManager } from "#/components/features/settings/git-settings/bitbucket-webhook-manager";
 import { BitbucketDCTokenInput } from "#/components/features/settings/git-settings/bitbucket-dc-token-help-input";
 import { BitbucketDCWebhookManager } from "#/components/features/settings/git-settings/bitbucket-dc-webhook-manager";
 import { AzureDevOpsTokenInput } from "#/components/features/settings/git-settings/azure-devops-token-input";
@@ -222,6 +223,8 @@ function GitSettingsScreen() {
     !forgejoHostInputHasValue;
   const shouldRenderGitHubConfigureButton = isSaas && config?.github_app_slug;
   const shouldRenderGitLabSection = isSaas && Boolean(config?.gitlab_enabled);
+  const shouldRenderBitbucketSection =
+    isSaas && Boolean(config?.providers_configured?.includes("bitbucket"));
   const shouldRenderBitbucketDCSection =
     isSaas &&
     Boolean(config?.providers_configured?.includes("bitbucket_data_center"));
@@ -277,6 +280,33 @@ function GitSettingsScreen() {
                   </Typography.Text>
                 </div>
                 {isGitLabTokenSet && <GitLabWebhookManager />}
+              </div>
+              <div className="w-1/2 border-b border-gray-200" />
+            </>
+          )}
+
+          {shouldRenderBitbucketSection && (
+            <>
+              <div className="mt-6 flex flex-col gap-4 pb-8">
+                <Typography.H3 className="text-xl">
+                  {t(I18nKey.BITBUCKET$WEBHOOK_SECTION_TITLE)}
+                </Typography.H3>
+                <div className="flex items-center">
+                  <DebugStackframeDot
+                    className="w-6 h-6 shrink-0"
+                    color={isBitbucketTokenSet ? "#BCFF8C" : "#FF684E"}
+                  />
+                  <Typography.Text
+                    className="text-sm text-gray-400"
+                    testId="bitbucket-status-text"
+                  >
+                    {t(I18nKey.COMMON$STATUS)}:{" "}
+                    {isBitbucketTokenSet
+                      ? t(I18nKey.STATUS$CONNECTED)
+                      : t(I18nKey.BITBUCKET$NOT_CONNECTED)}
+                  </Typography.Text>
+                </div>
+                {isBitbucketTokenSet && <BitbucketWebhookManager />}
               </div>
               <div className="w-1/2 border-b border-gray-200" />
             </>

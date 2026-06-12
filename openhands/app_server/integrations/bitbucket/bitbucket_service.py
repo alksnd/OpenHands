@@ -7,6 +7,7 @@ from openhands.app_server.integrations.bitbucket.service import (
     BitBucketPRsMixin,
     BitBucketReposMixin,
     BitBucketResolverMixin,
+    BitBucketWebhooksMixin,
 )
 from openhands.app_server.integrations.service_types import (
     GitService,
@@ -17,6 +18,7 @@ from openhands.app_server.utils.import_utils import get_impl
 
 
 class BitBucketService(
+    BitBucketWebhooksMixin,
     BitBucketResolverMixin,
     BitBucketReposMixin,
     BitBucketBranchesMixin,
