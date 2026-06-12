@@ -1,5 +1,7 @@
 """User router for OpenHands App Server. For the moment, this simply implements the /me endpoint."""
 
+import logging
+
 from fastapi import APIRouter, Header, HTTPException, Query, status
 from fastapi.responses import JSONResponse
 
@@ -9,6 +11,9 @@ from openhands.app_server.sandbox.session_auth import validate_session_key_owner
 from openhands.app_server.user.user_context import UserContext
 from openhands.app_server.user.user_models import UserInfo
 from openhands.app_server.utils.dependencies import get_dependencies
+
+_logger = logging.getLogger(__name__)
+_audit = logging.getLogger('openhands.security.secrets_access')
 
 # We use the get_dependencies method here to signal to the OpenAPI docs that this endpoint
 # is protected. The actual protection is provided by SetAuthCookieMiddleware
@@ -34,7 +39,32 @@ async def get_current_user(
     if user is None:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, detail='Not authenticated')
     if expose_secrets:
-        await validate_session_key_ownership(user_context, x_session_api_key)
+        try:
+            await validate_session_key_ownership(user_context, x_session_api_key)
+        except HTTPException:
+            _audit.warning(
+                'secrets_access',
+                extra={
+                    'route': '/users/me',
+                    'user_id': user.id,
+                    'sandbox_id': None,
+                    'actor_type': 'user',
+                    'secret_name': None,
+                    'outcome': 'denied',
+                },
+            )
+            raise
+        _audit.info(
+            'secrets_access',
+            extra={
+                'route': '/users/me',
+                'user_id': user.id,
+                'sandbox_id': None,
+                'actor_type': 'user',
+                'secret_name': None,
+                'outcome': 'allowed',
+            },
+        )
         return JSONResponse(  # type: ignore[return-value]
             content=user.model_dump(mode='json', context={'expose_secrets': True})
         )
