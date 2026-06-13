@@ -376,7 +376,20 @@ class LiveStatusAppConversationService(AppConversationServiceBase):
             request_agent = start_conversation_request.agent
             tags: dict[str, str] = {}
             if request_agent.agent_kind == 'acp':
-                llm_model = None
+                # ACP agents don't expose the active LLM via ``request_agent.llm``
+                # (the SDK uses a placeholder LLM whose ``model`` is the
+                # "acp-managed" sentinel — see ``ACPAgent._make_dummy_llm``).
+                # The real model comes back on the agent-server response.
+                # Prefer ``current_model_name`` (the resolved human-readable
+                # value, e.g. "Default (recommended)" rather than "default"
+                # for claude-agent-acp); fall back to ``current_model_id``
+                # for SDK builds that have one but not the other; finally
+                # ``None`` for older builds that have neither. ``getattr``
+                # keeps the app_server forward- and backward-compatible
+                # with whatever SDK version the agent-server is running.
+                llm_model = getattr(info, 'current_model_name', None) or getattr(
+                    info, 'current_model_id', None
+                )
                 agent_kind = 'acp'
                 # Persist the active ACP provider key so the conversation UI
                 # can resolve a brand label ("Claude Code", "Codex", …) via
