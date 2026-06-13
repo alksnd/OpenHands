@@ -213,3 +213,72 @@ def test_from_org_keeps_custom_base_url_that_is_not_provider_default():
         == 'https://company-proxy.internal/anthropic'
     )
     assert response.search_api_key == '****1234'
+
+
+def test_from_org_strips_null_agent_context_without_500():
+    """GIVEN: An org row with ``agent_context: null`` persisted for an OpenHands
+        variant (the exact shape behind the /api/organizations 500s reported in
+        the incident at 05:46 UTC).
+    WHEN: ``OrgDefaultsSettingsResponse.from_org`` serializes the org.
+    THEN: It loads successfully instead of raising a Pydantic ValidationError —
+        the null is silently dropped and the field default is used instead.
+    """
+    org = MagicMock(spec=Org)
+    org.agent_settings = {
+        'agent_kind': 'openhands',
+        'agent_context': None,
+        'llm': {'model': 'anthropic/claude-sonnet-4-5'},
+    }
+    org.conversation_settings = {}
+    org.llm_api_key = None
+    org.search_api_key = None
+
+    response = OrgDefaultsSettingsResponse.from_org(org)
+
+    assert response.agent_settings.agent_kind == 'openhands'
+    assert response.agent_settings.llm.model == 'anthropic/claude-sonnet-4-5'
+
+
+def test_org_update_strips_null_agent_context_for_openhands_variant():
+    """``OrgUpdate.agent_settings_diff`` with ``agent_context: null`` must be
+    stripped during normalisation for OpenHands variants.
+
+    ``OpenHandsAgentSettings.agent_context`` is non-nullable; a null value in
+    the diff would propagate via deep-merge into the stored JSON column and
+    cause a ValidationError on every subsequent read.  The model validator must
+    remove the key before the diff reaches ``_merge_and_validate_settings``.
+    """
+    update = OrgUpdate.model_validate(
+        {
+            'agent_settings_diff': {
+                'agent_context': None,
+                'llm': {'model': 'anthropic/claude-sonnet-4-5'},
+            }
+        }
+    )
+
+    assert update.agent_settings_diff is not None
+    assert 'agent_context' not in update.agent_settings_diff
+
+
+def test_org_update_preserves_null_agent_context_for_acp_variant():
+    """``OrgUpdate.agent_settings_diff`` must preserve ``agent_context: null``
+    when ``agent_kind: 'acp'`` is explicitly set.
+
+    ``ACPAgentSettings.agent_context`` is nullable, so null is a valid and
+    meaningful value for ACP diffs.
+    """
+    update = OrgUpdate.model_validate(
+        {
+            'agent_settings_diff': {
+                'agent_kind': 'acp',
+                'agent_context': None,
+                'acp_server': 'claude-code',
+            }
+        }
+    )
+
+    assert update.agent_settings_diff is not None
+    assert update.agent_settings_diff.get('agent_context') is None
+    # Key must be present (not accidentally dropped together with agent_kind stripping)
+    assert 'agent_context' in update.agent_settings_diff

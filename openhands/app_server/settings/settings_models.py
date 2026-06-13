@@ -75,10 +75,26 @@ def _load_persisted_agent_settings(
     ``LLMAgentSettings``. Doing it here keeps every read on the canonical
     ``{openhands, acp}`` variants, without the cross-variant coercion that 500'd
     ACP settings (``agent_kind: 'acp'`` is left untouched).
+
+    Defensively strips an explicit ``agent_context: null`` for non-ACP variants.
+    ``OpenHandsAgentSettings`` requires ``agent_context`` to be a dict or
+    ``AgentContext`` instance — never ``None``.  Clients that persist
+    ``agent_context=null`` (e.g. older code paths or buggy writes) would
+    otherwise surface as HTTP 500 on every subsequent read.  Dropping the key
+    lets the field default take over, restoring a valid state without losing any
+    real configuration.  ACP settings legitimately carry ``agent_context=None``
+    (the field is nullable there), so they are left untouched.
     """
     payload = data or {}
     if isinstance(payload, dict) and payload.get('agent_kind') == 'llm':
         payload = {**payload, 'agent_kind': 'openhands'}
+    if (
+        isinstance(payload, dict)
+        and payload.get('agent_kind', 'openhands') != 'acp'
+        and 'agent_context' in payload
+        and payload['agent_context'] is None
+    ):
+        payload = {k: v for k, v in payload.items() if k != 'agent_context'}
     return validate_agent_settings(payload)
 
 
@@ -216,10 +232,24 @@ class Settings(BaseModel):
                     _coerce_value(value) if not isinstance(value, dict) else value
                 )
 
+            # Strip an explicit ``agent_context: null`` for non-ACP variants.
+            # The field is non-nullable in ``OpenHandsAgentSettings``, so null
+            # is never a valid write.  Removing the key here also prevents
+            # ``deep_merge`` from treating it as a "delete this key" tombstone,
+            # which would silently wipe a valid existing ``agent_context`` from
+            # org settings.
+            new_kind = coerced.get('agent_kind')
+            target_kind = new_kind or self.agent_settings.agent_kind
+            if (
+                target_kind != 'acp'
+                and 'agent_context' in coerced
+                and coerced['agent_context'] is None
+            ):
+                coerced.pop('agent_context')
+
             replace_mcp_config = 'mcp_config' in agent_update
             mcp_config = coerced.pop('mcp_config', None) if replace_mcp_config else None
 
-            new_kind = coerced.get('agent_kind')
             current_kind = self.agent_settings.agent_kind
 
             if new_kind and new_kind != current_kind:

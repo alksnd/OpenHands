@@ -262,6 +262,21 @@ class OrgUpdate(BaseModel):
 
     def _normalize_agent_settings_diff(self) -> None:
         """Normalize nested LLM settings inside ``agent_settings_diff``."""
+        if self.agent_settings_diff is None:
+            return
+
+        # Strip an explicit ``agent_context: null`` for non-ACP variants.  The
+        # field is non-nullable in ``OpenHandsAgentSettings``; a null value in
+        # the diff would propagate into the stored JSON and cause a
+        # ValidationError on every subsequent read.
+        target_kind = self.agent_settings_diff.get('agent_kind', 'openhands')
+        if (
+            target_kind != 'acp'
+            and 'agent_context' in self.agent_settings_diff
+            and self.agent_settings_diff['agent_context'] is None
+        ):
+            self.agent_settings_diff.pop('agent_context')
+
         llm_diff = self._get_agent_llm_diff()
         if llm_diff is None:
             return

@@ -144,3 +144,75 @@ def test_loader_preserves_acp_variant_without_coercion():
 
     assert loaded.agent_kind == 'acp'
     assert loaded.agent_context is None
+
+
+def test_loader_strips_null_agent_context_for_openhands_variant():
+    """Persisted ``agent_context: null`` for OpenHands settings must not 500.
+
+    ``OpenHandsAgentSettings`` requires ``agent_context`` to be a dict or
+    ``AgentContext`` instance — ``None`` is invalid.  Buggy writes or legacy
+    code paths that stored ``agent_context=null`` would otherwise cause a
+    Pydantic ``ValidationError`` (HTTP 500) on every subsequent read of the
+    organisation's settings.  The loader must silently drop the null and let
+    the field default take over.
+    """
+    loaded = _load_persisted_agent_settings(
+        {
+            'agent_kind': 'openhands',
+            'agent_context': None,
+            'llm': {'model': 'anthropic/claude-sonnet-4-5'},
+        }
+    )
+
+    assert loaded.agent_kind == 'openhands'
+
+
+def test_loader_strips_null_agent_context_when_agent_kind_absent():
+    """``agent_context: null`` is stripped even when ``agent_kind`` is absent.
+
+    Persisted rows that pre-date the ``agent_kind`` field default to the
+    ``openhands`` variant.  The loader must strip null ``agent_context`` for
+    those rows too.
+    """
+    loaded = _load_persisted_agent_settings(
+        {
+            'agent_context': None,
+            'llm': {'model': 'anthropic/claude-sonnet-4-5'},
+        }
+    )
+
+    assert loaded.agent_kind == 'openhands'
+
+
+def test_loader_preserves_null_agent_context_for_acp_variant():
+    """``agent_context: null`` must be preserved for ACP settings.
+
+    ``ACPAgentSettings.agent_context`` is nullable by design — stripping it
+    would change the semantics of ACP configurations.
+    """
+    loaded = _load_persisted_agent_settings(
+        {
+            'agent_kind': 'acp',
+            'agent_context': None,
+            'acp_server': 'claude-code',
+            'llm': {'model': 'litellm_proxy/anthropic/claude-sonnet-4'},
+        }
+    )
+
+    assert loaded.agent_kind == 'acp'
+    assert loaded.agent_context is None
+
+
+def test_update_strips_null_agent_context_from_openhands_diff():
+    """``agent_settings_diff`` with ``agent_context: null`` must not corrupt
+    org settings.
+
+    ``deep_merge`` treats ``None`` values as "delete this key", so sending
+    ``agent_context: null`` in the diff would silently remove a valid existing
+    ``agent_context`` from org settings.  The fix must strip the key before
+    the merge to preserve the existing value.
+    """
+    s = Settings()
+    # Should not raise even though OpenHands settings reject agent_context=None
+    s.update({'agent_settings_diff': {'agent_context': None}})
+    assert s.agent_settings.agent_kind == 'openhands'
