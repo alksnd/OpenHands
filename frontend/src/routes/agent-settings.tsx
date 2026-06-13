@@ -125,7 +125,7 @@ export default function AgentSettingsScreen() {
     lastInitializedSettingsRef.current = settings;
     const kind = settings.agent_settings?.agent_kind;
 
-    if (kind === "acp") {
+    if (kind === "acp" && isAcpEnabled) {
       setAgentType("acp");
       const tokens = [
         ...toStringArray(settings.agent_settings?.acp_command),
@@ -147,7 +147,7 @@ export default function AgentSettingsScreen() {
       setAcpModel("");
     }
     setIsDirty(false);
-  }, [settings, acpProviders, isConfigLoading]);
+  }, [settings, acpProviders, isAcpEnabled, isConfigLoading]);
 
   // ── Derived state ─────────────────────────────────────────────────────────
   const isAcp = agentType === "acp";
