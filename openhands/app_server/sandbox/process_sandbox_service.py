@@ -83,6 +83,7 @@ class ProcessSandboxService(SandboxService):
     agent_server_module: str
     health_check_path: str
     httpx_client: httpx.AsyncClient
+    url_pattern: str = 'http://localhost:{port}'
 
     def __post_init__(self):
         """Initialize the service after dataclass creation."""
@@ -210,10 +211,13 @@ class ProcessSandboxService(SandboxService):
                 )
                 response = await self.httpx_client.get(url, timeout=5.0)
                 if response.status_code == 200:
+                    exposed_url = self.url_pattern.format(
+                        port=process_info.port, sandbox_id=sandbox_id
+                    )
                     exposed_urls = [
                         ExposedUrl(
                             name=AGENT_SERVER,
-                            url=f'http://localhost:{process_info.port}',
+                            url=exposed_url,
                             port=process_info.port,
                         ),
                     ]
@@ -445,6 +449,18 @@ class ProcessSandboxServiceInjector(SandboxServiceInjector):
     health_check_path: str = Field(
         default='/alive', description='Health check endpoint path'
     )
+    url_pattern: str = Field(
+        default='http://localhost:{port}',
+        description=(
+            'URL pattern for exposed sandbox ports. Supported placeholders: '
+            '{port} - the port the sandbox is listening on, '
+            '{sandbox_id} - the unique sandbox identifier. '
+            'Examples: '
+            'http://192.168.1.100:{port} (direct port access), '
+            'http://my-server.com/runtime/{sandbox_id} (path-based routing for K8s/ingress). '
+            'Configure via OH_PROCESS_SANDBOX_URL_PATTERN environment variable.'
+        ),
+    )
 
     async def inject(
         self, state: InjectorState, request: Request | None = None
@@ -471,4 +487,5 @@ class ProcessSandboxServiceInjector(SandboxServiceInjector):
                 agent_server_module=self.agent_server_module,
                 health_check_path=self.health_check_path,
                 httpx_client=httpx_client,
+                url_pattern=self.url_pattern,
             )

@@ -150,6 +150,11 @@ class DockerSandboxService(SandboxService):
         except (ValueError, AttributeError):
             created_at = utc_now()
 
+        # Extract sandbox_id from container name (strip the prefix)
+        sandbox_id = container.name
+        if sandbox_id.startswith(self.container_name_prefix):
+            sandbox_id = sandbox_id[len(self.container_name_prefix) :]
+
         # Get URL and session key for running containers
         exposed_urls = None
         session_api_key = None
@@ -170,7 +175,9 @@ class DockerSandboxService(SandboxService):
                 # Host network mode: container ports are directly accessible on host
                 for exposed_port in self.exposed_ports:
                     host_port = exposed_port.container_port
-                    url = self.container_url_pattern.format(port=host_port)
+                    url = self.container_url_pattern.format(
+                        port=host_port, sandbox_id=sandbox_id
+                    )
 
                     # VSCode URLs require the api_key and working dir
                     if exposed_port.name == VSCODE:
@@ -201,7 +208,9 @@ class DockerSandboxService(SandboxService):
                                 None,
                             )
                             if matching_port:
-                                url = self.container_url_pattern.format(port=host_port)
+                                url = self.container_url_pattern.format(
+                                    port=host_port, sandbox_id=sandbox_id
+                                )
 
                                 # VSCode URLs require the api_key and working dir
                                 if matching_port.name == VSCODE:
@@ -581,8 +590,12 @@ class DockerSandboxServiceInjector(SandboxServiceInjector):
     container_url_pattern: str = Field(
         default='http://localhost:{port}',
         description=(
-            'URL pattern for exposed sandbox ports. Use {port} as placeholder. '
-            'For remote access, set to your server IP (e.g., http://192.168.1.100:{port}). '
+            'URL pattern for exposed sandbox ports. Supported placeholders: '
+            '{port} - the host port mapped to the container, '
+            '{sandbox_id} - the unique sandbox identifier. '
+            'Examples: '
+            'http://192.168.1.100:{port} (direct port access), '
+            'http://my-server.com/runtime/{sandbox_id} (path-based routing for K8s/ingress). '
             'Configure via OH_SANDBOX_CONTAINER_URL_PATTERN environment variable.'
         ),
     )
