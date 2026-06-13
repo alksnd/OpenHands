@@ -403,6 +403,53 @@ class AppConversationServiceBase(AppConversationService, ABC):
         if result.exit_code:
             _logger.warning(f'Git checkout failed: {result.stderr}')
 
+        # Clone dependency repos if specified
+        if request.dependency_repos:
+            await self._clone_dependency_repos(request.dependency_repos, workspace)
+
+    async def _clone_dependency_repos(
+        self,
+        dependency_repos: list[str],
+        workspace: AsyncRemoteWorkspace,
+    ) -> list[str]:
+        """Clone additional dependency repositories into the workspace.
+
+        Failures are non-fatal: each repo is attempted independently,
+        and warnings are logged for any that fail.
+
+        Args:
+            dependency_repos: List of repos in 'owner/repo' format.
+            workspace: The remote workspace to clone repos into.
+
+        Returns:
+            List of directory names that were successfully cloned.
+        """
+        cloned = []
+        for repo in dependency_repos:
+            try:
+                dep_url = await self.user_context.get_authenticated_git_url(repo)
+                if not dep_url:
+                    _logger.warning(
+                        f'Could not get authenticated URL for dependency repo: {repo}'
+                    )
+                    continue
+                dep_name = repo.split('/')[-1]
+                result = await workspace.execute_command(
+                    f'git clone {shlex.quote(dep_url)} {shlex.quote(dep_name)}',
+                    workspace.working_dir,
+                    120,
+                )
+                if result.exit_code:
+                    _logger.warning(
+                        f'Failed to clone dependency repo {repo}: {result.stderr}'
+                    )
+                else:
+                    cloned.append(dep_name)
+                    _logger.info(f'Successfully cloned dependency repo: {repo}')
+            except Exception as e:
+                _logger.warning(f'Unexpected error cloning dependency repo {repo}: {e}')
+        return cloned
+
     async def _get_azure_devops_bearer_token_for_git(
         self,
         git_provider: ProviderType | None,

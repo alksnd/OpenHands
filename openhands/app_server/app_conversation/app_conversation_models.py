@@ -193,6 +193,16 @@ class AppConversationStartRequest(OpenHandsModel):
     selected_repository: str | None = None
     selected_branch: str | None = None
     git_provider: ProviderType | None = None
+    dependency_repos: list[str] = Field(
+        default_factory=list,
+        description=(
+            'Additional repositories to clone alongside the selected_repository. '
+            'Each entry should be in "owner/repo" format '
+            '(e.g., "All-Hands-AI/OpenHands"). '
+            'These repositories will be cloned into the workspace alongside the '
+            'main repo. Clone failures are non-fatal and will be logged as warnings.'
+        ),
+    )
     suggested_task: SuggestedTask | None = None
     title: str | None = None
     trigger: ConversationTrigger | None = None

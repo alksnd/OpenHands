@@ -784,6 +784,7 @@ async def test_clone_or_init_git_repo_quotes_selected_branch_before_checkout(
     task.request = Mock(
         selected_repository='owner/repo',
         selected_branch='feature>tmp',
+        dependency_repos=[],
     )
 
     await service.clone_or_init_git_repo(task, mock_workspace)
@@ -819,6 +820,7 @@ async def test_clone_or_init_git_repo_configures_dynamic_azure_devops_helper(
         selected_repository='org/project/repo',
         selected_branch='main',
         git_provider=ProviderType.AZURE_DEVOPS,
+        dependency_repos=[],
     )
     sandbox = SandboxInfo(
         id='sandbox-123',
@@ -1300,3 +1302,126 @@ class TestLoadAndMergeAllSkills:
 
             # Assert
             assert result == []
+
+
+class TestCloneDependencyRepos:
+    """Tests for _clone_dependency_repos method."""
+
+    def _make_service(
+        self,
+        authenticated_url: str | None = 'https://token@github.com/owner/dep-repo.git',
+    ):
+        """Create a real AppConversationServiceBase instance with mocked user_context."""
+        mock_user_context = Mock(spec=UserContext)
+        mock_user_context.get_authenticated_git_url = AsyncMock(
+            return_value=authenticated_url
+        )
+        with patch.object(AppConversationServiceBase, '__abstractmethods__', set()):
+            service = AppConversationServiceBase(
+                init_git_in_empty_workspace=False,
+                user_context=mock_user_context,
+            )
+        return service
+
+    def _make_workspace(self, exit_code: int = 0):
+        """Create a mock workspace."""
+        workspace = Mock()
+        workspace.working_dir = '/workspace'
+        workspace.execute_command = AsyncMock(
+            return_value=MockCommandResult(exit_code=exit_code)
+        )
+        return workspace
+
+    @pytest.mark.asyncio
+    async def test_clones_single_dependency_repo_successfully(self):
+        """Successfully clones a single dependency repo."""
+        service = self._make_service()
+        workspace = self._make_workspace(exit_code=0)
+
+        result = await service._clone_dependency_repos(['owner/dep-repo'], workspace)
+
+        assert result == ['dep-repo']
+        workspace.execute_command.assert_awaited_once()
+        call_args = workspace.execute_command.call_args[0][0]
+        assert 'git clone' in call_args
+        assert 'dep-repo' in call_args
+
+    @pytest.mark.asyncio
+    async def test_clones_multiple_dependency_repos(self):
+        """Clones multiple dependency repos and returns all successful names."""
+        service = self._make_service()
+        workspace = self._make_workspace(exit_code=0)
+
+        result = await service._clone_dependency_repos(
+            ['owner/repo-a', 'owner/repo-b'], workspace
+        )
+
+        assert result == ['repo-a', 'repo-b']
+        assert workspace.execute_command.await_count == 2
+
+    @pytest.mark.asyncio
+    async def test_skips_repo_when_no_authenticated_url(self):
+        """Skips a repo if no authenticated URL can be obtained."""
+        service = self._make_service(authenticated_url=None)
+        workspace = self._make_workspace()
+
+        result = await service._clone_dependency_repos(
+            ['owner/private-repo'], workspace
+        )
+
+        assert result == []
+        workspace.execute_command.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_non_fatal_on_clone_failure(self):
+        """A clone failure is non-fatal: logs warning and continues."""
+        service = self._make_service()
+        workspace = self._make_workspace(exit_code=1)
+
+        result = await service._clone_dependency_repos(['owner/bad-repo'], workspace)
+
+        assert result == []
+        workspace.execute_command.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_partial_success_when_one_repo_fails(self):
+        """Returns only successfully cloned repos when some fail."""
+        service = self._make_service()
+        workspace = Mock()
+        workspace.working_dir = '/workspace'
+        workspace.execute_command = AsyncMock(
+            side_effect=[
+                MockCommandResult(exit_code=0),  # repo-a succeeds
+                MockCommandResult(exit_code=1, stderr='auth error'),  # repo-b fails
+                MockCommandResult(exit_code=0),  # repo-c succeeds
+            ]
+        )
+
+        result = await service._clone_dependency_repos(
+            ['owner/repo-a', 'owner/repo-b', 'owner/repo-c'], workspace
+        )
+
+        assert result == ['repo-a', 'repo-c']
+
+    @pytest.mark.asyncio
+    async def test_empty_list_returns_empty(self):
+        """Empty dependency_repos list returns empty result immediately."""
+        service = self._make_service()
+        workspace = self._make_workspace()
+
+        result = await service._clone_dependency_repos([], workspace)
+
+        assert result == []
+        workspace.execute_command.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_non_fatal_on_unexpected_exception(self):
+        """An unexpected exception during clone is caught and logged."""
+        service = self._make_service()
+        workspace = Mock()
+        workspace.working_dir = '/workspace'
+        workspace.execute_command = AsyncMock(side_effect=RuntimeError('boom'))
+
+        result = await service._clone_dependency_repos(['owner/repo'], workspace)
+
+        assert result == []
