@@ -7,6 +7,7 @@ from integrations.slack.slack_manager import (
     SLACK_USER_MSG_EXPIRATION,
     SLACK_USER_MSG_KEY_PREFIX,
     SlackManager,
+    _get_v1_start_error_message,
 )
 from integrations.slack.slack_view import SlackNewConversationView
 from storage.slack_user import SlackUser
@@ -65,6 +66,52 @@ def slack_new_conversation_view(mock_slack_user, mock_user_auth):
         conversation_id='',
         team_id='T1234567890',
     )
+
+
+
+class TestStartJob:
+    """Test Slack job startup error handling."""
+
+    @pytest.mark.asyncio
+    async def test_start_job_shows_critic_api_key_error(
+        self, slack_manager, slack_new_conversation_view
+    ):
+        """Surface critic API key validation failures with a user-friendly message."""
+        slack_new_conversation_view.selected_repo = 'OpenHands/OpenHands'
+        slack_new_conversation_view.create_or_update_conversation = AsyncMock(
+            side_effect=RuntimeError(
+                'Failed to start V1 conversation: 1 validation error for '
+                'ConversationInfo\nagent.critic.api_key\n'
+                '  Value error, api_key must be non-empty '
+                '[type=value_error, input_value=None, input_type=NoneType]'
+            )
+        )
+        slack_manager.send_message = AsyncMock()
+
+        await slack_manager.start_job(slack_new_conversation_view)
+
+        slack_manager.send_message.assert_called_once()
+        sent_message = slack_manager.send_message.call_args[0][0]
+        assert 'critic agent' in sent_message
+        assert 'LLM API key' in sent_message
+
+    @pytest.mark.asyncio
+    async def test_start_job_keeps_generic_message_for_unknown_runtime_error(
+        self, slack_manager, slack_new_conversation_view
+    ):
+        """Keep the generic fallback for unrelated runtime failures."""
+        slack_new_conversation_view.selected_repo = 'OpenHands/OpenHands'
+        slack_new_conversation_view.create_or_update_conversation = AsyncMock(
+            side_effect=RuntimeError('boom')
+        )
+        slack_manager.send_message = AsyncMock()
+
+        await slack_manager.start_job(slack_new_conversation_view)
+
+        slack_manager.send_message.assert_called_once_with(
+            'Uh oh! There was an unexpected error starting the job :(',
+            slack_new_conversation_view,
+        )
 
 
 @pytest.mark.parametrize(
@@ -1218,3 +1265,90 @@ class TestHandleSlackError:
             # Verify message is not empty
             assert message
             assert isinstance(message, str)
+
+
+class TestGetV1StartErrorMessage:
+    """Tests for _get_v1_start_error_message helper function."""
+
+    def test_critic_api_key_error_returns_helpful_message(self):
+        """Critic API key missing error maps to a user-friendly message."""
+        error = RuntimeError(
+            "Failed to start V1 conversation: agent.critic - api_key must be non-empty"
+        )
+        result = _get_v1_start_error_message(error, "testuser")
+        assert result is not None
+        assert "critic" in result.lower() or "LLM API key" in result
+        assert "@testuser" in result
+
+    def test_unrecognized_runtime_error_returns_none(self):
+        """Unknown RuntimeErrors return None so they can be re-raised."""
+        error = RuntimeError("Some other unexpected error occurred")
+        result = _get_v1_start_error_message(error, "testuser")
+        assert result is None
+
+    def test_partial_match_only_critic_returns_none(self):
+        """Error containing 'agent.critic' but not 'api_key must be non-empty' returns None."""
+        error = RuntimeError("agent.critic encountered an unknown failure")
+        result = _get_v1_start_error_message(error, "testuser")
+        assert result is None
+
+    def test_partial_match_only_api_key_returns_none(self):
+        """Error containing 'api_key must be non-empty' but not 'agent.critic' returns None."""
+        error = RuntimeError("LLM api_key must be non-empty for the model")
+        result = _get_v1_start_error_message(error, "testuser")
+        assert result is None
+
+    def test_username_is_included_in_message(self):
+        """The returned message includes the provided username."""
+        error = RuntimeError(
+            "Failed to start V1 conversation: agent.critic - api_key must be non-empty"
+        )
+        result = _get_v1_start_error_message(error, "johndoe")
+        assert result is not None
+        assert "johndoe" in result
+
+
+class TestStartJobRuntimeErrorHandling:
+    """Tests for the RuntimeError handling path in start_job."""
+
+    @pytest.mark.asyncio
+    async def test_critic_api_key_error_shows_helpful_message(
+        self, slack_manager, mock_slack_user
+    ):
+        """Critic API key RuntimeError is caught and produces a user-friendly message."""
+        mock_view = MagicMock()
+        mock_view.slack_to_openhands_user = mock_slack_user
+        mock_view.create_or_update_conversation = AsyncMock(
+            side_effect=RuntimeError(
+                "Failed to start V1 conversation: agent.critic - api_key must be non-empty"
+            )
+        )
+
+        with patch.object(slack_manager, 'send_message', new_callable=AsyncMock) as mock_send:
+            await slack_manager.start_job(mock_view)
+
+        mock_send.assert_called_once()
+        sent_message = mock_send.call_args.args[0]
+        assert sent_message is not None
+        assert "@" in sent_message
+        assert mock_slack_user.slack_display_name in sent_message
+
+    @pytest.mark.asyncio
+    async def test_unrecognized_runtime_error_falls_through_to_generic_handler(
+        self, slack_manager, mock_slack_user
+    ):
+        """Unrecognized RuntimeErrors are re-raised and caught by the outer handler."""
+        mock_view = MagicMock()
+        mock_view.slack_to_openhands_user = mock_slack_user
+        mock_view.create_or_update_conversation = AsyncMock(
+            side_effect=RuntimeError("Some unexpected startup error")
+        )
+
+        with patch.object(slack_manager, 'send_message', new_callable=AsyncMock) as mock_send:
+            await slack_manager.start_job(mock_view)
+
+        mock_send.assert_called_once()
+        sent_message = mock_send.call_args.args[0]
+        # Generic error message from outer except block
+        assert "unexpected error" in sent_message.lower()
+

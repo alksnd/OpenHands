@@ -58,6 +58,17 @@ SLACK_USER_MSG_KEY_PREFIX = 'slack_user_msg'
 SLACK_USER_MSG_EXPIRATION = 300
 
 
+def _get_v1_start_error_message(error: RuntimeError, username: str) -> str | None:
+    """Map known V1 conversation startup failures to user-facing Slack messages."""
+    detail = str(error)
+    if 'agent.critic' in detail and 'api_key must be non-empty' in detail:
+        return (
+            f'@{username} please set a valid LLM API key for your critic agent in '
+            f'[OpenHands Cloud]({HOST_URL}) before starting a job.'
+        )
+    return None
+
+
 class SlackManager(Manager[SlackViewInterface]):
     def __init__(self, token_manager):
         self.token_manager = token_manager
@@ -740,6 +751,18 @@ class SlackManager(Manager[SlackViewInterface]):
 
             except StartingConvoException as e:
                 msg_info = str(e)
+
+            except RuntimeError as e:
+                msg_info = _get_v1_start_error_message(
+                    e, user_info.slack_display_name
+                )
+                if msg_info is None:
+                    raise
+                logger.warning(
+                    '[Slack] V1 conversation validation error for user %s: %s',
+                    user_info.slack_display_name,
+                    str(e),
+                )
 
             await self.send_message(msg_info, slack_view)
 
