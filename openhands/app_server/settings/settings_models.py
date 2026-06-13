@@ -174,6 +174,22 @@ class Settings(BaseModel):
         )
         return bool(secret_value and secret_value.strip())
 
+    def revalidated_for_persistence(self) -> Settings:
+        """Re-run validation before persisting settings.
+
+        This intentionally routes nested SDK settings through
+        ``validate_agent_settings()`` and ``ConversationSettings.from_persisted()``
+        via ``Settings``' normal validation path, without duplicating SDK schema
+        checks in OpenHands.
+        """
+        return type(self).model_validate(
+            {
+                field: getattr(self, field)
+                for field in type(self).model_fields
+                if hasattr(self, field)
+            }
+        )
+
     # ── Batch update ────────────────────────────────────────────────
 
     def reconcile_active_profile(self) -> None:

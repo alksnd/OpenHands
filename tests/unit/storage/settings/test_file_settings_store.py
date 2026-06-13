@@ -3,7 +3,7 @@ import os
 from unittest.mock import MagicMock, patch
 
 import pytest
-from pydantic import SecretStr
+from pydantic import SecretStr, ValidationError
 
 from openhands.app_server.file_store.files import FileStore
 from openhands.app_server.settings.file_settings_store import FileSettingsStore
@@ -95,6 +95,19 @@ async def test_store_and_load_data(file_settings_store):
     assert (
         loaded_data.agent_settings.llm.base_url == init_data.agent_settings.llm.base_url
     )
+
+
+@pytest.mark.asyncio
+async def test_store_rejects_malformed_constructed_settings(file_settings_store):
+    malformed = Settings.model_construct(
+        agent_settings={'schema_version': 999, 'agent_kind': 'bogus'},
+        conversation_settings=ConversationSettings(),
+    )
+
+    with pytest.raises(ValidationError):
+        await file_settings_store.store(malformed)
+
+    file_settings_store.file_store.write.assert_not_called()
 
 
 @pytest.mark.asyncio

@@ -4,7 +4,7 @@ from unittest.mock import patch
 
 import pytest
 from fastmcp.mcp_config import MCPConfig
-from pydantic import SecretStr
+from pydantic import SecretStr, ValidationError
 
 import openhands.app_server.settings.settings_models as settings_module
 from openhands.app_server.settings.llm_profiles import ProfileNotFoundError
@@ -41,6 +41,16 @@ def test_settings_handles_sensitive_data():
     llm_api_key = settings.agent_settings.llm.api_key
     assert str(llm_api_key) == '**********'
     assert llm_api_key.get_secret_value() == 'test-key'
+
+
+def test_settings_revalidated_for_persistence_rejects_malformed_sdk_settings():
+    settings = Settings.model_construct(
+        agent_settings={'schema_version': 999, 'agent_kind': 'bogus'},
+        conversation_settings=ConversationSettings(),
+    )
+
+    with pytest.raises(ValidationError):
+        settings.revalidated_for_persistence()
 
 
 def test_settings_loads_persisted_settings_via_sdk_loaders():

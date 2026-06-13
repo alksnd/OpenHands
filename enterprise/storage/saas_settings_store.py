@@ -76,9 +76,10 @@ class SaasSettingsStore(SettingsStore):
     effective_org_id: UUID | None = None
 
     def _resolve_org_id(self, user: User) -> UUID:
-        """Return the effective org id for this request, or the user's
-        current org id as a fallback. The caller still needs to verify
-        that the user is a member of the returned org (handled in load/
+        """Return the effective org id for this request.
+
+        Uses the user's current org id as a fallback. The caller still needs to
+        verify that the user is a member of the returned org (handled in load/
         store by the existing org_members lookup).
 
         `user.current_org_id` is non-nullable on the ORM model, so the
@@ -89,8 +90,7 @@ class SaasSettingsStore(SettingsStore):
     async def _get_user_settings_by_keycloak_id_async(
         self, keycloak_user_id: str, session=None
     ) -> UserSettings | None:
-        """
-        Get UserSettings by keycloak_user_id (async version).
+        """Get UserSettings by keycloak_user_id (async version).
 
         Args:
             keycloak_user_id: The keycloak user ID to search for
@@ -310,6 +310,7 @@ class SaasSettingsStore(SettingsStore):
         async with a_session_maker() as session:
             if not item:
                 return None
+            item = item.revalidated_for_persistence()
             result = await session.execute(
                 select(User)
                 .options(joinedload(User.org_members))
@@ -502,7 +503,6 @@ class SaasSettingsStore(SettingsStore):
         First checks if an existing key exists for the user and verifies it
         is valid in LiteLLM. If valid, reuses it. Otherwise, generates a new key.
         """
-
         llm_api_key = item.agent_settings.llm.api_key
 
         # First, check if our current key is valid

@@ -39,6 +39,15 @@ class FileSettingsStore(SettingsStore):
             return None
 
     async def store(self, settings: Settings) -> None:
+        if not isinstance(settings, Settings):
+            raise TypeError('FileSettingsStore.store() requires Settings')
+
+        # Revalidate at the persistence boundary. Pydantic assignment or
+        # model_construct() can bypass normal field validation; validating the
+        # serialized payload routes nested SDK settings through their canonical
+        # migration/validation loaders before anything is written.
+        settings = settings.revalidated_for_persistence()
+
         json_str = settings.model_dump_json(
             context={'expose_secrets': True, 'persist_settings': True}
         )
