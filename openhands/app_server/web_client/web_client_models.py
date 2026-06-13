@@ -26,7 +26,7 @@ class WebClientFeatureFlags(BaseModel):
     # workspace users see. UI-level only — the orgs API still returns
     # personal orgs, and disabling the flag restores them.
     hide_personal_workspaces: bool = False
-    enable_acp: bool = False
+    enable_acp: bool = True
     deployment_mode: DeploymentMode | None = None
     enable_onboarding: bool = False
 
