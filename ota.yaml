@@ -1,0 +1,629 @@
+version: 1
+project:
+  name: OpenHands
+  description: OpenHands contributor readiness slice covering the documented local GUI path, the supported Docker runtime path, an Ota-managed packaged container runtime, and the openhands-ui package build surface; enterprise, release/publish, and devcontainer workflows remain out of scope
+  type: application
+metadata:
+  ota:
+    minimum_version: "1.6.20"
+toolchains:
+  python:
+    version: "3.12"
+    package_managers:
+      poetry: ">=1.8"
+  node:
+    version: "^22.12.0"
+    package_managers:
+      npm: ">=10.5.0"
+execution:
+  default_context: host
+  contexts:
+    host:
+      backend: native
+      only_on:
+        - linux
+        - macos
+    host-dev:
+      extends: host
+      requirements:
+        toolchains:
+          - python
+          - node
+    host-frontend:
+      extends: host
+      requirements:
+        toolchains:
+          - node
+    docker-host:
+      extends: host
+      requirements:
+        tools:
+          docker: "*"
+    host-ui:
+      extends: host
+      requirements:
+        toolchains:
+          - node
+        tools:
+          bun: ">=1.2.17"
+    app:
+      backend: container
+      lifecycle: ephemeral
+      requirements:
+        toolchains:
+          - python
+          - node
+      attachments:
+        isolated_paths:
+          - .venv
+          - frontend/node_modules
+          - openhands-ui/node_modules
+      container:
+        image: nikolaik/python-nodejs:python3.12-nodejs22
+        engines:
+          - docker
+          - podman
+checks:
+  - name: netcat-installed
+    kind: precondition
+    severity: error
+    run: sh -c "command -v nc >/dev/null"
+    timeout: 10000
+  - name: backend-python-dependencies-installed
+    kind: file
+    severity: error
+    path: .venv/pyvenv.cfg
+    expect: file
+    timeout: 10000
+  - name: frontend-dependencies-installed
+    kind: file
+    severity: error
+    path: frontend/node_modules
+    expect: directory
+    timeout: 10000
+surfaces:
+  backend:
+    kind: http
+    port: 3000
+    path: /health
+    readiness:
+      kind: http
+      method: GET
+      path: /health
+      success:
+        status:
+          - 200
+      body:
+        contains: "OK"
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 10s
+  frontend:
+    kind: http
+    port: 3001
+    path: /
+    readiness:
+      kind: http
+      method: GET
+      path: /
+      headers:
+        Accept: text/html
+      success:
+        status:
+          - 200
+      body:
+        contains: "<!DOCTYPE html>"
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 15s
+  packaged-web:
+    kind: http
+    port: 3000
+    path: /
+    readiness:
+      kind: http
+      method: GET
+      path: /
+      headers:
+        Accept: text/html
+      success:
+        status:
+          - 200
+      body:
+        contains: "<!DOCTYPE html>"
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 15s
+tasks:
+  install:backend:
+    context: host-dev
+    description: Hydrate backend Python dependencies through the repo's Poetry install lane
+    notes: |
+      This models the documented `poetry install --with dev,test,runtime` path directly instead of
+      hiding it behind the broader `make build` wrapper. The host lane relies on runner-provided
+      Python and Poetry rather than asking ota to provision Python through `uv` on the run path.
+    category: setup
+    prepare:
+      kind: dependency_hydration
+      medium: package_dependencies
+      source:
+        kind: poetry
+        cwd: .
+        groups:
+          - dev
+          - test
+          - runtime
+        group_mode: with
+    requirements:
+      toolchains:
+        - python
+    effects:
+      writes:
+        - .venv
+      network: true
+      network_kind: dependency_hydration
+  install:frontend:
+    context: host-frontend
+    description: Hydrate frontend Node dependencies through the repo's npm install lane
+    notes: |
+      This models the dedicated `frontend/` dependency install path directly so frontend-only
+      verification and build tasks do not depend on the broader `make build` wrapper.
+    category: setup
+    prepare:
+      kind: dependency_hydration
+      medium: package_dependencies
+      source:
+        kind: node_package_manager
+        cwd: frontend
+        manager: npm
+        mode: ci
+    requirements:
+      toolchains:
+        - node
+    effects:
+      writes:
+        - frontend/node_modules
+      network: true
+      network_kind: dependency_hydration
+  build:
+    context: host-dev
+    description: Build and bootstrap the local OpenHands development environment
+    notes: |
+      This follows the documented self-development quick start in `Development.md`:
+      disable the Docker requirement check, prepare the Python and frontend dependencies,
+      install pre-commit hooks, and build the frontend assets.
+    category: setup
+    env:
+      INSTALL_DOCKER: "0"
+    run: make build
+    execution:
+      default_mode: native
+      modes:
+        container:
+          context: app
+          env:
+            INSTALL_DOCKER: "0"
+          run: make build
+    effects:
+      network: true
+  build:frontend:
+    context: host-frontend
+    description: Build the frontend assets only
+    notes: |
+      This maps directly to the repo's dedicated frontend asset build target.
+    category: setup
+    env:
+      INSTALL_DOCKER: "0"
+    run: sh -c 'cd frontend && npm run prepare && npm run build'
+    execution:
+      default_mode: native
+      modes:
+        container:
+          context: app
+          env:
+            INSTALL_DOCKER: "0"
+          run: sh -c 'cd frontend && npm run prepare && npm run build'
+    requirements:
+      checks:
+        - frontend-dependencies-installed
+    safe_for_agent: true
+  build:ui:
+    context: host-ui
+    description: Build the `openhands-ui` package with the repo's CI path
+    notes: |
+      This follows the dedicated `openhands-ui` build workflow by using Bun inside the package directory.
+      It is separate from the main frontend app under `frontend/`.
+    category: setup
+    run: sh -c 'cd openhands-ui && bun install --frozen-lockfile && bun run build'
+    effects:
+      network: true
+  lint:backend:
+    context: host-dev
+    description: Run the backend lint and formatting surface
+    notes: |
+      This maps directly to the documented backend pre-commit validation flow.
+    category: test
+    env:
+      INSTALL_DOCKER: "0"
+    run: poetry run pre-commit run --all-files --show-diff-on-failure --config ./dev_config/python/.pre-commit-config.yaml
+    execution:
+      default_mode: native
+      modes:
+        container:
+          context: app
+          env:
+            INSTALL_DOCKER: "0"
+          run: poetry run pre-commit run --all-files --show-diff-on-failure --config ./dev_config/python/.pre-commit-config.yaml
+    requirements:
+      checks:
+        - backend-python-dependencies-installed
+    safe_for_agent: true
+  lint:frontend:
+    context: host-frontend
+    description: Run the frontend lint and typecheck surface
+    notes: |
+      This maps directly to the documented frontend lint path.
+    category: test
+    env:
+      INSTALL_DOCKER: "0"
+    run: sh -c 'cd frontend && npm run lint'
+    execution:
+      default_mode: native
+      modes:
+        container:
+          context: app
+          env:
+            INSTALL_DOCKER: "0"
+          run: sh -c 'cd frontend && npm run lint'
+    requirements:
+      checks:
+        - frontend-dependencies-installed
+    safe_for_agent: true
+  lint:
+    description: Run the repository aggregate lint surface
+    notes: |
+      This is the documented aggregate lint entrypoint and covers both backend and frontend checks.
+    category: test
+    aggregate:
+      tasks:
+        - lint:backend
+        - lint:frontend
+    safe_for_agent: true
+  test:frontend:
+    context: host-frontend
+    description: Run the frontend test suite
+    notes: |
+      This maps directly to the current top-level `make test` target, which runs frontend tests.
+    category: test
+    env:
+      INSTALL_DOCKER: "0"
+    run: sh -c 'cd frontend && npm run test'
+    execution:
+      default_mode: native
+      modes:
+        container:
+          context: app
+          env:
+            INSTALL_DOCKER: "0"
+          run: sh -c 'cd frontend && npm run test'
+    requirements:
+      checks:
+        - frontend-dependencies-installed
+    safe_for_agent: true
+  test:backend:
+    context: host-dev
+    description: Run the backend Python unit tests
+    notes: |
+      This follows the documented backend unit test path in `Development.md`.
+    category: test
+    env:
+      INSTALL_DOCKER: "0"
+    run: poetry run pytest ./tests/unit/test_*.py
+    execution:
+      default_mode: native
+      modes:
+        container:
+          context: app
+          env:
+            INSTALL_DOCKER: "0"
+          run: poetry run pytest ./tests/unit/test_*.py
+    requirements:
+      checks:
+        - backend-python-dependencies-installed
+    safe_for_agent: true
+  test:
+    description: Run the documented frontend and backend test surfaces
+    notes: |
+      OpenHands documents frontend tests through `make test` and backend tests through pytest.
+      This aggregate task composes those two documented test surfaces.
+    category: test
+    aggregate:
+      tasks:
+        - test:frontend
+        - test:backend
+    safe_for_agent: true
+  setup:config-basic:
+    context: host
+    description: Create a basic config.toml for headless local runtime flows
+    notes: |
+      This is optional for the web UI path, which can configure the model in the Settings UI
+      after startup. It is useful for headless or CLI-oriented local runs.
+    category: setup
+    internal: true
+    run: make setup-config-basic
+    safe_for_agent: false
+  dev:
+    context: host-dev
+    description: Run the full local OpenHands GUI development loop
+    notes: |
+      This follows the documented "Running OpenHands with OpenHands" path in `Development.md`:
+      set `INSTALL_DOCKER=0`, set `RUNTIME=local`, then run `make build && make run`.
+      It is the narrowest honest contributor-ready path for local GUI work.
+    category: dev
+    env:
+      INSTALL_DOCKER: "0"
+      RUNTIME: local
+    launch:
+      kind: command
+      exe: make
+      args: [run]
+    depends_on:
+      - build
+    requirements:
+      checks:
+        - netcat-installed
+    runtime:
+      kind: service
+      surfaces:
+        backend: {}
+        frontend:
+          project:
+            host:
+              primary: true
+    safe_for_agent: false
+  dev:backend:
+    context: host-dev
+    description: Run the backend API server only
+    notes: |
+      This maps directly to the documented split backend path on port 3000.
+    category: dev
+    env:
+      RUNTIME: local
+    launch:
+      kind: command
+      exe: make
+      args: [start-backend]
+    depends_on:
+      - build
+    runtime:
+      kind: service
+      surfaces:
+        - backend
+    safe_for_agent: false
+  dev:frontend:
+    context: host-dev
+    description: Run the frontend development server only
+    notes: |
+      This maps directly to the documented split frontend path on port 3001.
+      It is most useful when the backend is already running separately.
+    category: dev
+    launch:
+      kind: command
+      exe: make
+      args: [start-frontend]
+    depends_on:
+      - build
+    runtime:
+      kind: service
+      surfaces:
+        - frontend
+    safe_for_agent: false
+  dev:docker-run:
+    context: docker-host
+    description: Run the documented Dockerized OpenHands runtime
+    notes: |
+      This maps directly to `make docker-run`, the repo's supported container runtime path when
+      you want to run OpenHands without installing host dependencies.
+    category: dev
+    launch:
+      kind: command
+      exe: make
+      args: [docker-run]
+    effects:
+      external_state:
+        - docker
+    runtime:
+      kind: service
+      surfaces:
+        backend: {}
+        frontend:
+          project:
+            host:
+              primary: true
+    safe_for_agent: false
+  dev:container:
+    context: docker-host
+    description: Run the packaged OpenHands image through Ota-managed container launch
+    notes: |
+      This uses the published `ghcr.io/openhands/openhands:1.7.0` image directly through Ota's
+      structured `launch.kind: container` path. Unlike `app:docker`, which follows the repo's
+      `make docker-run` wrapper flow, this models the packaged runtime as a first-class Ota
+      container service.
+    category: dev
+    effects:
+      external_state:
+        - docker
+    launch:
+      kind: container
+      image: ghcr.io/openhands/openhands:1.7.0
+      engine: docker
+    runtime:
+      kind: service
+      surfaces:
+        backend:
+          bind:
+            address: 0.0.0.0
+            port:
+              mode: fixed
+              value: 3000
+          project:
+            host:
+              address: 127.0.0.1
+              port:
+                mode: fixed
+                value: 3000
+              path: /health
+        packaged-web:
+          bind:
+            address: 0.0.0.0
+            port:
+              mode: fixed
+              value: 3000
+          project:
+            host:
+              address: 127.0.0.1
+              port:
+                mode: fixed
+                value: 3000
+              path: /
+              primary: true
+    safe_for_agent: false
+workflows:
+  default: app
+  app:
+    intent: local_development
+    description: Canonical local GUI development workflow for OpenHands itself
+    notes: |
+      This uses the documented self-development path under `Development.md`:
+      `INSTALL_DOCKER=0`, `RUNTIME=local`, then `make build && make run`.
+      Prefer this when you want the full local GUI loop with explicit readiness on backend and frontend.
+      Use `app:docker` when you want the supported container runtime path instead of host dependencies.
+    setup:
+      task: build
+    run:
+      task: dev
+    readiness:
+      surfaces:
+        - backend
+        - frontend
+    exposes:
+      - surface: backend
+      - surface: frontend
+  backend:
+    intent: backend_development
+    description: Backend-only API development workflow
+    notes: |
+      Use this for focused backend changes when you only need the API server.
+    setup:
+      task: build
+    run:
+      task: dev:backend
+    readiness:
+      surfaces: [backend]
+    exposes:
+      - surface: backend
+  frontend:
+    intent: frontend_development
+    description: Frontend-only development workflow
+    notes: |
+      Use this for focused frontend changes when the backend is already available or managed separately.
+    setup:
+      task: build
+    run:
+      task: dev:frontend
+    readiness:
+      surfaces: [frontend]
+    exposes:
+      - surface: frontend
+  app:docker:
+    intent: packaged_runtime
+    description: Supported Docker runtime workflow for running OpenHands without host dependency setup
+    notes: |
+      This maps directly to the documented `make docker-run` path in `Development.md`.
+      Prefer this when you want the repo's supported container runtime wrapper instead of the
+      host-native GUI loop. Use `app:container` when you want the Ota-managed packaged container
+      path rather than the repo's Makefile wrapper.
+    run:
+      task: dev:docker-run
+    readiness:
+      surfaces: [backend, frontend]
+    exposes:
+      - surface: backend
+      - surface: frontend
+  app:container:
+    intent: packaged_runtime
+    description: Ota-managed packaged container runtime for OpenHands
+    notes: |
+      This launches the published `ghcr.io/openhands/openhands:1.7.0` image through Ota's
+      structured container launch path. It adds a real Ota-managed container runtime surface
+      without replacing the repo's documented `make docker-run` wrapper workflow.
+    run:
+      task: dev:container
+    readiness:
+      surfaces: [backend, packaged-web]
+    exposes:
+      - surface: backend
+      - surface: packaged-web
+  ui-package:
+    intent: package_build
+    description: Build the `openhands-ui` package using the repo's dedicated Bun-based workflow
+    notes: |
+      This models the standalone `openhands-ui` package build path that the repo validates in CI.
+      It is separate from the main `frontend/` application workflow.
+    run:
+      task: build:ui
+agent:
+  posture: readiness_strict
+  entrypoint: build
+  default_task: lint
+  safe_tasks:
+    - build:frontend
+    - lint:backend
+    - lint:frontend
+    - lint
+    - test:frontend
+    - test:backend
+    - test
+  verify_after_changes:
+    - lint
+    - test:backend
+  writable_paths:
+    - .venv
+    - openhands
+    - frontend
+    - openhands-ui
+    - containers
+    - tests
+    - scripts
+    - Makefile
+    - pyproject.toml
+    - Development.md
+    - CONTRIBUTING.md
+  protected_paths:
+    - enterprise
+    - .github/workflows
+    - config.toml
+    - docker-compose.yml
+    - poetry.lock
+    - uv.lock
+    - frontend/package-lock.json
+    - openhands-ui/bun.lock
+    - ota.yaml
+  bootstrap:
+    ota:
+      note: Install ota when missing so contributors and agents can run the declared readiness workflows in this contract.
+      sh: curl -fsSL https://dist.ota.run/install.sh | OTA_GIT_REV=04bd078fd58e2686b2855eb8a57e6fdd746810a2 sh -s -- --from-git
+      powershell: $env:OTA_GIT_REV='04bd078fd58e2686b2855eb8a57e6fdd746810a2'; & ([scriptblock]::Create((irm https://dist.ota.run/install.ps1))) -FromGit
+  notes: |
+    Use `ota tasks --use .` to list runnable tasks and review the modeled execution surface before execution.
+    Use `ota up --workflow app --native .` for the canonical local GUI development loop.
+    Use `ota up --workflow backend --native .` or `ota up --workflow frontend --native .`
+    for focused service loops.
+    Use `ota up --workflow app:docker --native .` for the documented Docker runtime wrapper.
+    Use `ota up --workflow app:container --container .` for the Ota-managed packaged container path.
+    Use `ota up --workflow ui-package --native .` when validating the standalone `openhands-ui` build.
+    Use `ota run lint --native .` and `ota run test --native .` for bounded verification.
+    Enterprise, release/publish, and devcontainer workflows remain intentionally out of scope.

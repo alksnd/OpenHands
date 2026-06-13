@@ -1,0 +1,657 @@
+name: 'Test: Ota contract matrix'
+
+on:
+  workflow_dispatch:
+    inputs:
+      ota_version:
+        description: Released Ota version to install for this matrix run
+        required: false
+        default: v1.6.20
+      run_runtime_proof:
+        description: Run runtime proof steps (native app workflow)
+        required: false
+        default: "false"
+  pull_request:
+    paths:
+      - 'ota.yaml'
+      - '.github/workflows/test-ota-contract-matrix.yml'
+  push:
+    paths:
+      - 'ota.yaml'
+      - '.github/workflows/test-ota-contract-matrix.yml'
+
+concurrency:
+  group: ota-contract-matrix-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  OTA_NO_UPDATE_CHECK: '1'
+  OTA_VERSION: ${{ github.event.inputs.ota_version || 'v1.6.20' }}
+  INSTALL_DOCKER: '0'
+  RUNTIME: local
+
+jobs:
+  native:
+    name: Ota Contract Matrix (Native - ${{ matrix.name }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 150
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: ubuntu-bash
+            os: ubuntu-latest
+            full_proof: true
+            unsupported_host: false
+          - name: macos-bash
+            os: macos-latest
+            full_proof: false
+            unsupported_host: false
+          - name: windows-bash
+            os: windows-latest
+            full_proof: false
+            unsupported_host: true
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Setup Python 3.12
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+
+      - name: Install Poetry
+        shell: bash
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install poetry==2.3.4
+          poetry --version
+
+      - name: Install netcat on Ubuntu
+        if: matrix.os == 'ubuntu-latest'
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y netcat-openbsd
+
+      - name: Install ota (Unix)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          curl -fsSL https://dist.ota.run/install.sh | OTA_VERSION="${OTA_VERSION}" sh
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Install ota (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $env:OTA_VERSION = "${env:OTA_VERSION}"
+          irm https://dist.ota.run/install.ps1 | iex
+          (Join-Path $env:LOCALAPPDATA "ota\\bin") | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+
+      - name: Validate contract
+        shell: bash
+        run: |
+          ota validate --json . > ota-validate.json
+          ota validate .
+
+      - name: List runnable task usage
+        shell: bash
+        run: ota tasks --use .
+
+      - name: List agent-safe task usage
+        shell: bash
+        run: ota tasks --safe --use .
+
+      - name: List app workflow tasks
+        shell: bash
+        run: ota tasks --workflow app .
+
+      - name: List backend workflow tasks
+        shell: bash
+        run: ota tasks --workflow backend .
+
+      - name: List frontend workflow tasks
+        shell: bash
+        run: ota tasks --workflow frontend .
+
+      - name: List app:docker workflow tasks
+        shell: bash
+        run: ota tasks --workflow app:docker .
+
+      - name: List app:container workflow tasks
+        shell: bash
+        run: ota tasks --workflow app:container .
+
+      - name: List ui-package workflow tasks
+        shell: bash
+        run: ota tasks --workflow ui-package .
+
+      - name: Export execution topology
+        shell: bash
+        run: |
+          ota execution topology --json . > ota-execution-topology.json
+          cat ota-execution-topology.json
+
+      - name: Doctor app workflow reports unsupported host
+        if: ${{ matrix.unsupported_host }}
+        timeout-minutes: 10
+        shell: bash
+        run: |
+          set +e
+          ota doctor --workflow app --json . > ota-doctor-app.json
+          status=$?
+          set -e
+          if [ "$status" -eq 0 ]; then
+            echo "expected ota doctor to fail on unsupported native Windows host"
+            exit 1
+          fi
+          python - <<'PY'
+          import json
+          with open("ota-doctor-app.json", "r", encoding="utf-8") as fh:
+              report = json.load(fh)
+          findings = report.get("findings", [])
+          assert any(
+              finding.get("summary", "").startswith("Unsupported host platform for context:")
+              for finding in findings
+          ), findings
+          PY
+
+      - name: Dry-run app workflow
+        if: ${{ !matrix.unsupported_host }}
+        shell: bash
+        run: ota up --workflow app --native --dry-run .
+
+      - name: Dry-run backend workflow
+        if: ${{ !matrix.unsupported_host }}
+        shell: bash
+        run: ota up --workflow backend --native --dry-run .
+
+      - name: Dry-run frontend workflow
+        if: ${{ !matrix.unsupported_host }}
+        shell: bash
+        run: ota up --workflow frontend --native --dry-run .
+
+      - name: Execute native smoke tasks (cross-OS non-Ubuntu)
+        if: ${{ !matrix.full_proof && !matrix.unsupported_host }}
+        timeout-minutes: 45
+        shell: bash
+        run: |
+          ota run install:frontend --native --stream .
+          ota run build:frontend --native --stream .
+
+      - name: Execute safe verification tasks
+        if: ${{ matrix.full_proof }}
+        timeout-minutes: 60
+        shell: bash
+        run: |
+          ota run install:backend --native --stream .
+          ota run install:frontend --native --stream .
+          ota run lint:backend --native --stream .
+          ota run lint:frontend --native --stream .
+          ota run test:backend --native --stream .
+
+      - name: Setup Bun (native pressure lane)
+        if: ${{ matrix.full_proof && matrix.name == 'ubuntu-bash' }}
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
+        with:
+          bun-version-file: openhands-ui/.bun-version
+
+      - name: Dry-run all non-internal tasks (native coverage lane)
+        if: ${{ matrix.full_proof }}
+        timeout-minutes: 150
+        shell: bash
+        run: |
+          set -euo pipefail
+          ota tasks --json . > ota-tasks-all.json
+          jq -c '
+            .tasks[]
+            | select((.internal // false) == false)
+            | {
+                name: .name,
+                supports_native: (
+                  if (.modes | type) == "array" then
+                    any(.modes[]?; .mode == "native")
+                  else
+                    true
+                  end
+                ),
+                runtime_native: (
+                  if (.modes | type) == "array" then
+                    any(.modes[]?; .mode == "native" and ((.has_runtime // false) == true))
+                  else
+                    (.has_runtime // false)
+                  end
+                )
+              }
+            | select(.supports_native)
+          ' ota-tasks-all.json > ota-non-internal-native.jsonl
+          while IFS= read -r task_line; do
+            task_name="$(jq -r '.name' <<<"$task_line")"
+            runtime_native="$(jq -r '.runtime_native' <<<"$task_line")"
+            echo ">>> [native] ${task_name} (runtime=${runtime_native})"
+            if [ "$runtime_native" = "true" ]; then
+              ota run --native --dry-run --json "$task_name" .
+            else
+              ota run --native --dry-run --json "$task_name" .
+            fi
+          done < ota-non-internal-native.jsonl
+
+      - name: Execute non-internal non-runtime tasks (native coverage lane)
+        if: ${{ matrix.full_proof }}
+        timeout-minutes: 150
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Test-category tasks are executed in the dedicated verification lane above.
+          # This generic non-runtime execution lane stays focused on deterministic non-test surfaces.
+          ota tasks --json . > ota-tasks-all.json
+          jq -c '
+            .tasks[]
+            | select((.internal // false) == false)
+            | {
+                name: .name,
+                category: (.category // ""),
+                supports_native: (
+                  if (.modes | type) == "array" then
+                    any(.modes[]?; .mode == "native")
+                  else
+                    true
+                  end
+                ),
+                runtime_native: (
+                  if (.modes | type) == "array" then
+                    any(.modes[]?; .mode == "native" and ((.has_runtime // false) == true))
+                  else
+                    (.has_runtime // false)
+                  end
+                )
+              }
+            | select(.supports_native and (.runtime_native | not) and (.category != "dev") and (.category != "test"))
+          ' ota-tasks-all.json > ota-non-internal-native-exec.jsonl
+          while IFS= read -r task_line; do
+            task_name="$(jq -r '.name' <<<"$task_line")"
+            echo ">>> [native exec] ${task_name}"
+            ota run --native --stream "$task_name" .
+          done < ota-non-internal-native-exec.jsonl
+
+      - name: Dry-run all non-internal tasks (container coverage lane)
+        if: ${{ matrix.full_proof }}
+        timeout-minutes: 180
+        shell: bash
+        run: |
+          set -euo pipefail
+          ota tasks --json . > ota-tasks-all.json
+          jq -c '
+            .tasks[]
+            | select((.internal // false) == false)
+            | {
+                name: .name,
+                supports_container: (
+                  if (.modes | type) == "array" then
+                    any(.modes[]?; .mode == "container")
+                  else
+                    ((.default_mode // "native") == "container")
+                  end
+                ),
+                runtime_container: (
+                  if (.modes | type) == "array" then
+                    any(.modes[]?; .mode == "container" and ((.has_runtime // false) == true))
+                  else
+                    (.has_runtime // false)
+                  end
+                )
+              }
+            | select(.supports_container)
+          ' ota-tasks-all.json > ota-non-internal-container.jsonl
+          if [ ! -s ota-non-internal-container.jsonl ]; then
+            echo "expected at least one non-internal task with container mode support"
+            exit 1
+          fi
+          while IFS= read -r task_line; do
+            task_name="$(jq -r '.name' <<<"$task_line")"
+            runtime_container="$(jq -r '.runtime_container' <<<"$task_line")"
+            echo ">>> [container] ${task_name} (runtime=${runtime_container})"
+            if [ "$runtime_container" = "true" ]; then
+              ota run --container --dry-run --json "$task_name" .
+            else
+              ota run --container --dry-run --json "$task_name" .
+            fi
+          done < ota-non-internal-container.jsonl
+
+      - name: Dry-run app workflow reports unsupported host
+        if: ${{ matrix.unsupported_host }}
+        shell: bash
+        run: |
+          set +e
+          ota up --workflow app --native --dry-run . > ota-up-app.txt 2>&1
+          status=$?
+          set -e
+          cat ota-up-app.txt
+          if [ "$status" -eq 0 ]; then
+            echo "expected ota up --dry-run to fail on unsupported native Windows host"
+            exit 1
+          fi
+          grep -F "Unsupported host platform for context" ota-up-app.txt
+
+      - name: Dry-run app:docker workflow reports unsupported host
+        if: ${{ matrix.unsupported_host }}
+        shell: bash
+        run: |
+          set +e
+          ota up --workflow app:docker --native --dry-run . > ota-up-app-docker.txt 2>&1
+          status=$?
+          set -e
+          cat ota-up-app-docker.txt
+          if [ "$status" -eq 0 ]; then
+            echo "expected ota up --dry-run to fail on unsupported native Windows host"
+            exit 1
+          fi
+          grep -F "Unsupported host platform for context" ota-up-app-docker.txt
+
+      - name: Dry-run app:container workflow reports unsupported host
+        if: ${{ matrix.unsupported_host }}
+        shell: bash
+        run: |
+          set +e
+          ota up --workflow app:container --native --dry-run . > ota-up-app-container.txt 2>&1
+          status=$?
+          set -e
+          cat ota-up-app-container.txt
+          if [ "$status" -eq 0 ]; then
+            echo "expected ota up --dry-run to fail on unsupported native Windows host"
+            exit 1
+          fi
+          grep -F "Unsupported host platform for context" ota-up-app-container.txt
+
+      - name: Dry-run ui-package workflow reports unsupported host
+        if: ${{ matrix.unsupported_host }}
+        shell: bash
+        run: |
+          set +e
+          ota up --workflow ui-package --native --dry-run . > ota-up-ui-package.txt 2>&1
+          status=$?
+          set -e
+          cat ota-up-ui-package.txt
+          if [ "$status" -eq 0 ]; then
+            echo "expected ota up --dry-run to fail on unsupported native Windows host"
+            exit 1
+          fi
+          grep -F "Unsupported host platform for context" ota-up-ui-package.txt
+
+      - name: Proof app workflow
+        if: matrix.full_proof && github.event_name == 'workflow_dispatch' && github.event.inputs.run_runtime_proof == 'true'
+        timeout-minutes: 90
+        shell: bash
+        run: |
+          ota clean . || true
+          ota proof runtime --workflow app --ready-timeout 25m --json . > ota-proof-app.json
+          cat ota-proof-app.json
+          ota clean . || true
+
+      - name: Upload failure artifacts
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: ota-contract-matrix-${{ matrix.name }}
+          include-hidden-files: true
+          path: |
+            ota-validate.json
+            ota-execution-topology.json
+            ota-doctor-app.json
+            ota-proof-app.json
+            ota-up-app-docker.txt
+            ota-up-app-container.txt
+            ota-up-ui-package.txt
+            .ota/
+          retention-days: 7
+
+  docker-smoke-ubuntu:
+    name: Ota Contract Matrix (Docker Smoke - ubuntu-bash)
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Install ota (Unix)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          curl -fsSL https://dist.ota.run/install.sh | OTA_VERSION="${OTA_VERSION}" sh
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Install ota (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $env:OTA_VERSION = "${env:OTA_VERSION}"
+          irm https://dist.ota.run/install.ps1 | iex
+          (Join-Path $env:LOCALAPPDATA "ota\\bin") | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+
+      - name: Verify Docker
+        shell: bash
+        run: |
+          docker --version
+          docker info
+
+      - name: Validate contract
+        shell: bash
+        run: |
+          ota validate --json . > ota-validate-docker.json
+          ota validate .
+
+      - name: List app:docker workflow tasks
+        shell: bash
+        run: ota tasks --workflow app:docker .
+
+      - name: List app:container workflow tasks
+        shell: bash
+        run: ota tasks --workflow app:container .
+
+      - name: Export execution topology
+        shell: bash
+        run: |
+          ota execution topology --json . > ota-execution-topology-docker.json
+          cat ota-execution-topology-docker.json
+
+      - name: Dry-run app:docker workflow
+        shell: bash
+        run: ota up --workflow app:docker --native --dry-run .
+
+      - name: Dry-run app:container workflow
+        shell: bash
+        run: ota up --workflow app:container --native --dry-run .
+
+      - name: Execute non-internal non-runtime tasks in container mode
+        timeout-minutes: 120
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Test-category tasks are executed in dedicated verification lanes.
+          # Keep this generic container execution lane on deterministic non-test surfaces.
+          ota tasks --json . > ota-tasks-all.json
+          jq -c '
+            .tasks[]
+            | select((.internal // false) == false)
+            | {
+                name: .name,
+                category: (.category // ""),
+                supports_container: (
+                  if (.modes | type) == "array" then
+                    any(.modes[]?; .mode == "container")
+                  else
+                    ((.default_mode // "native") == "container")
+                  end
+                ),
+                runtime_container: (
+                  if (.modes | type) == "array" then
+                    any(.modes[]?; .mode == "container" and ((.has_runtime // false) == true))
+                  else
+                    (.has_runtime // false)
+                  end
+                )
+              }
+            | select(.supports_container and (.runtime_container | not) and (.category != "dev") and (.category != "test"))
+          ' ota-tasks-all.json > ota-non-internal-container-exec.jsonl
+          if [ ! -s ota-non-internal-container-exec.jsonl ]; then
+            echo "expected at least one non-internal non-runtime task with container mode support"
+            exit 1
+          fi
+          while IFS= read -r task_line; do
+            task_name="$(jq -r '.name' <<<"$task_line")"
+            echo ">>> [container exec] ${task_name}"
+            ota run --container --stream "$task_name" .
+          done < ota-non-internal-container-exec.jsonl
+
+      - name: Upload Docker smoke failure artifacts
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: ota-contract-matrix-docker-smoke-ubuntu-bash
+          include-hidden-files: true
+          path: |
+            ota-validate-docker.json
+            ota-execution-topology-docker.json
+            .ota/
+          retention-days: 7
+
+  app-container-proof-ubuntu:
+    name: Ota Contract Matrix (App Container Proof - ubuntu-bash)
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Install ota (Unix)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          curl -fsSL https://dist.ota.run/install.sh | OTA_VERSION="${OTA_VERSION}" sh
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Install ota (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $env:OTA_VERSION = "${env:OTA_VERSION}"
+          irm https://dist.ota.run/install.ps1 | iex
+          (Join-Path $env:LOCALAPPDATA "ota\\bin") | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+
+      - name: Verify Docker
+        shell: bash
+        run: |
+          docker --version
+          docker info
+
+      - name: Validate contract
+        shell: bash
+        run: |
+          ota validate --json . > ota-validate-app-container.json
+          ota validate .
+
+      - name: Proof app:container workflow
+        timeout-minutes: 60
+        shell: bash
+        run: |
+          ota clean . || true
+          ota proof runtime --workflow app:container --ready-timeout 25m --json . > ota-proof-app-container.json
+          cat ota-proof-app-container.json
+          ota clean . || true
+
+      - name: Upload app:container proof failure artifacts
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: ota-contract-matrix-app-container-proof-ubuntu-bash
+          include-hidden-files: true
+          path: |
+            ota-validate-app-container.json
+            ota-proof-app-container.json
+            .ota/
+          retention-days: 7
+
+  ui-package-ubuntu:
+    name: Ota Contract Matrix (UI Package - ubuntu-bash)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
+        with:
+          bun-version-file: openhands-ui/.bun-version
+
+      - name: Install ota (Unix)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          curl -fsSL https://dist.ota.run/install.sh | OTA_VERSION="${OTA_VERSION}" sh
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Install ota (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $env:OTA_VERSION = "${env:OTA_VERSION}"
+          irm https://dist.ota.run/install.ps1 | iex
+          (Join-Path $env:LOCALAPPDATA "ota\\bin") | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+
+      - name: Verify Bun
+        shell: bash
+        run: bun --version
+
+      - name: Validate contract
+        shell: bash
+        run: |
+          ota validate --json . > ota-validate-ui-package.json
+          ota validate .
+
+      - name: List ui-package workflow tasks
+        shell: bash
+        run: ota tasks --workflow ui-package .
+
+      - name: Export execution topology
+        shell: bash
+        run: |
+          ota execution topology --json . > ota-execution-topology-ui-package.json
+          cat ota-execution-topology-ui-package.json
+
+      - name: Dry-run ui-package workflow
+        shell: bash
+        run: ota up --workflow ui-package --native --dry-run .
+
+      - name: Upload UI package failure artifacts
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: ota-contract-matrix-ui-package-ubuntu-bash
+          include-hidden-files: true
+          path: |
+            ota-validate-ui-package.json
+            ota-execution-topology-ui-package.json
+            .ota/
+          retention-days: 7
