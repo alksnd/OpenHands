@@ -35,6 +35,23 @@ class TestDefaultLLMModelServiceSearchModels:
         assert 'openhands' in providers
 
     @pytest.mark.asyncio
+    async def test_managed_openhands_models_are_verified(self, monkeypatch):
+        monkeypatch.setenv(
+            'OPENHANDS_MANAGED_LITELLM_MODELS',
+            'sonnet=provider-model, meta-llama/Llama-3.1-70B-Instruct',
+        )
+
+        service = DefaultLLMModelService()
+        result = await service.search_llm_models(
+            provider_eq='openhands',
+            limit=10000,
+        )
+
+        models = {m.name: m for m in result.items}
+        assert models['sonnet'].verified is True
+        assert models['meta-llama/Llama-3.1-70B-Instruct'].verified is True
+
+    @pytest.mark.asyncio
     async def test_includes_clarifai_models(self):
         service = DefaultLLMModelService()
         result = await service.search_llm_models(limit=10000)

@@ -33,6 +33,10 @@ from openhands.sdk.llm.utils.verified_models import (
     VERIFIED_OPENHANDS_MODELS as _SDK_OPENHANDS,
 )
 
+from openhands.app_server.utils.managed_litellm_models import (  # noqa: E402
+    get_managed_openhands_models,
+)
+
 # Build the ``openhands/…`` model list from the SDK.
 OPENHANDS_MODELS: list[str] = [f'openhands/{m}' for m in _SDK_OPENHANDS]
 
@@ -206,6 +210,9 @@ def get_openhands_models(
     Returns:
         A list such as ``["openhands/claude-opus-4-6", ...]``.
     """
+    managed_models = get_managed_openhands_models()
+    if managed_models:
+        return managed_models
     return verified_models if verified_models else OPENHANDS_MODELS
 
 

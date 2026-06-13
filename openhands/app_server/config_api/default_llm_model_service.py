@@ -43,6 +43,7 @@ _VERIFIED_MODEL_SET: set[str] = {
 def _to_llm_models(models_response: ModelsResponse) -> list[LLMModel]:
     """Convert raw model strings into ``LLMModel`` objects with verified flags."""
     results: list[LLMModel] = []
+    verified_openhands_models = set(models_response.verified_models)
     for model_name in models_response.models:
         parts = model_name.split('/', 1)
         if len(parts) == 2:
@@ -54,7 +55,8 @@ def _to_llm_models(models_response: ModelsResponse) -> list[LLMModel]:
             LLMModel(
                 provider=provider,
                 name=name,
-                verified=model_name in _VERIFIED_MODEL_SET,
+                verified=model_name in _VERIFIED_MODEL_SET
+                or (provider == 'openhands' and name in verified_openhands_models),
             )
         )
     return results

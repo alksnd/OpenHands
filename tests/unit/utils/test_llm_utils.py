@@ -7,6 +7,9 @@ from openhands.app_server.utils.llm import (
     get_provider_api_base,
     is_openhands_model,
 )
+from openhands.app_server.utils.managed_litellm_models import (
+    parse_managed_litellm_model_aliases,
+)
 
 
 class TestIsOpenhandsModel:
@@ -124,6 +127,47 @@ class TestDeriveVerifiedModels:
         assert _derive_verified_models(models) == [
             'claude-opus-4-5-20251101',
             'gpt-5',
+        ]
+
+
+class TestParseManagedLitellmModelAliases:
+    """Tests for OHE/KOTS managed LiteLLM model list parsing."""
+
+    def test_accepts_commas_newlines_and_aliases(self):
+        raw = """
+        sonnet=us.anthropic.claude-sonnet-4-5-20250929-v1:0,
+        opus=us.anthropic.claude-opus-4-5-20251101-v1:0
+        qwen3-coder-480b
+        """
+
+        assert parse_managed_litellm_model_aliases(raw) == [
+            'sonnet',
+            'opus',
+            'qwen3-coder-480b',
+        ]
+
+    def test_plain_model_ids_are_used_as_aliases(self):
+        assert parse_managed_litellm_model_aliases(
+            'qwen3-coder-480b, meta-llama/Llama-3.1-70B-Instruct'
+        ) == [
+            'qwen3-coder-480b',
+            'meta-llama/Llama-3.1-70B-Instruct',
+        ]
+
+    def test_dedupes_and_normalizes_prefixes(self):
+        assert parse_managed_litellm_model_aliases(
+            'openhands/sonnet, litellm_proxy/sonnet, opus='
+        ) == ['sonnet']
+
+    def test_managed_models_override_verified_openhands_models(self, monkeypatch):
+        monkeypatch.setenv(
+            'OPENHANDS_MANAGED_LITELLM_MODELS',
+            'sonnet=us.anthropic.claude-sonnet-4-5-20250929-v1:0, opus',
+        )
+
+        assert llm_utils.get_openhands_models(['openhands/db-model']) == [
+            'openhands/sonnet',
+            'openhands/opus',
         ]
 
 

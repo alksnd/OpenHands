@@ -1,6 +1,10 @@
 import os
 import re
 
+from openhands.app_server.utils.managed_litellm_models import (
+    get_managed_litellm_model_aliases,
+)
+
 # Get the host from environment variable
 HOST = os.getenv('WEB_HOST', 'app.all-hands.dev').strip()
 
@@ -139,6 +143,9 @@ def get_default_litellm_model():
     """Construct proxy for litellm model based on user settings if not set explicitly."""
     if LITELLM_DEFAULT_MODEL:
         return LITELLM_DEFAULT_MODEL
+    managed_models = get_managed_litellm_model_aliases()
+    if managed_models:
+        return build_litellm_proxy_model_path(managed_models[0])
     model = PERSONAL_WORKSPACE_VERSION_TO_MODEL[PERSONAL_WORKSPACE_VERSION]
     return build_litellm_proxy_model_path(model)
 

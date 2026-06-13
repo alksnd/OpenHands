@@ -103,3 +103,44 @@ class TestDeploymentModeInConfig:
             assert 'FEATURE_FLAGS' in config
             assert 'DEPLOYMENT_MODE' in config['FEATURE_FLAGS']
             assert config['FEATURE_FLAGS']['DEPLOYMENT_MODE'] == 'self_hosted'
+
+
+class TestDefaultLiteLLMModel:
+    """Tests for deployment-default LiteLLM model selection."""
+
+    def test_managed_litellm_models_first_entry_is_default(self):
+        """KOTS-managed model routes use the first entry as the deployment default."""
+        import importlib
+
+        with patch.dict(
+            'os.environ',
+            {
+                'OPENHANDS_MANAGED_LITELLM_MODELS': 'sonnet=anthropic-target, opus',
+                'LITELLM_DEFAULT_MODEL': '',
+            },
+        ):
+            import server.constants as constants_module
+
+            importlib.reload(constants_module)
+
+            assert constants_module.get_default_litellm_model() == 'litellm_proxy/sonnet'
+
+    def test_explicit_litellm_default_model_takes_precedence(self):
+        """Existing explicit default-model deployments keep their configured default."""
+        import importlib
+
+        with patch.dict(
+            'os.environ',
+            {
+                'OPENHANDS_MANAGED_LITELLM_MODELS': 'sonnet, opus',
+                'LITELLM_DEFAULT_MODEL': 'litellm_proxy/manual-default',
+            },
+        ):
+            import server.constants as constants_module
+
+            importlib.reload(constants_module)
+
+            assert (
+                constants_module.get_default_litellm_model()
+                == 'litellm_proxy/manual-default'
+            )
