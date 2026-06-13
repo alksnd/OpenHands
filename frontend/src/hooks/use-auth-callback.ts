@@ -3,14 +3,17 @@ import { useLocation, useNavigate } from "react-router";
 import { useIsAuthed } from "./query/use-is-authed";
 import { LoginMethod, setLoginMethod } from "#/utils/local-storage";
 import { useConfig } from "./query/use-config";
+import { useSettings } from "./query/use-settings";
 
 /**
  * Hook to handle authentication callback and set login method after successful authentication
+ * Only stores the login method if stay_logged_in setting is enabled
  */
 export const useAuthCallback = () => {
   const location = useLocation();
   const { data: isAuthed, isLoading: isAuthLoading } = useIsAuthed();
   const { data: config } = useConfig();
+  const { data: settings } = useSettings();
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -34,28 +37,38 @@ export const useAuthCallback = () => {
     const loginMethod = searchParams.get("login_method");
     const returnTo = searchParams.get("returnTo");
 
-    // Set the login method if it's valid
-    if (Object.values(LoginMethod).includes(loginMethod as LoginMethod)) {
-      setLoginMethod(loginMethod as LoginMethod);
+    // Always clean up the URL by removing auth-related parameters
+    searchParams.delete("login_method");
+    searchParams.delete("returnTo");
 
-      // Clean up the URL by removing auth-related parameters
-      searchParams.delete("login_method");
-      searchParams.delete("returnTo");
+    // Determine where to navigate after authentication
+    let destination = "/";
+    if (returnTo && returnTo !== "/login") {
+      destination = returnTo;
+    } else if (location.pathname !== "/login" && location.pathname !== "/") {
+      destination = location.pathname;
+    }
 
-      // Determine where to navigate after authentication
-      let destination = "/";
-      if (returnTo && returnTo !== "/login") {
-        destination = returnTo;
-      } else if (location.pathname !== "/login" && location.pathname !== "/") {
-        destination = location.pathname;
-      }
+    const remainingParams = searchParams.toString();
+    const finalUrl = remainingParams
+      ? `${destination}?${remainingParams}`
+      : destination;
 
-      const remainingParams = searchParams.toString();
-      const finalUrl = remainingParams
-        ? `${destination}?${remainingParams}`
-        : destination;
-
+    // Only redirect if there are auth params to clean up
+    // Avoids unnecessary revalidation on normal authenticated page loads
+    if (searchParams.toString() || loginMethod || returnTo) {
       navigate(finalUrl, { replace: true });
+    }
+
+    // Only store login method if settings is loaded and stay_logged_in is enabled
+    // (handles case where useSettings is disabled on intermediate pages)
+    // Handle undefined/null data as "use default" (stay_logged_in = true when not explicitly set)
+    const stayLoggedIn = settings?.stay_logged_in;
+    if (
+      Object.values(LoginMethod).includes(loginMethod as LoginMethod) &&
+      stayLoggedIn !== false
+    ) {
+      setLoginMethod(loginMethod as LoginMethod);
     }
   }, [
     isAuthed,
@@ -64,5 +77,6 @@ export const useAuthCallback = () => {
     location.pathname,
     config?.app_mode,
     navigate,
+    settings,
   ]);
 };
